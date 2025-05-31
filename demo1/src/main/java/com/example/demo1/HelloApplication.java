@@ -1,2359 +1,1572 @@
 package com.example.demo1;
 
-
 import javafx.application.Application;
 import javafx.stage.Stage;
 import javafx.stage.Modality;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
-import javafx.scene.effect.DropShadow;
 import javafx.scene.paint.Color;
-import javafx.scene.paint.LinearGradient;
-import javafx.scene.paint.CycleMethod;
-import javafx.scene.paint.Stop;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
-import javafx.scene.shape.Circle;
-import javafx.animation.FadeTransition;
-import javafx.animation.ScaleTransition;
-import javafx.util.Duration;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+
+import java.sql.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class HelloApplication extends Application {
+
+    // Database connection info - change accordingly
+    private static final String DB_URL = "jdbc:postgresql://localhost:5432/learningManagement";
+    private static final String DB_USER = "postgres"; // <-- replace
+    private static final String DB_PASS = "Taittmndell210702"; // <-- replace
+
     private Stage primaryStage;
-    private Scene homeScene;
-    private Scene courseScene;
-    private Scene dashboardScene;
-    private Scene profileScene;
-    private Scene lecturerDashboardScene;
-    private Map<String, User> users; // username -> User
-    private Map<String, List<String>> enrolledCourses; // username -> enrolled course codes
-    private List<Course> allCourses; // All courses with codes and faculty
-    private Map<String, List<Announcement>> announcements; // courseCode -> announcements
-    private List<Notification> notifications; // System-wide notifications
-    private Map<String, List<Content>> courseContent; // courseCode -> videos/PDFs
-    private Map<String, List<Message>> messages; // courseCode -> message threads
-    private Map<String, List<Assessment>> assessments; // courseCode -> assessments
-    private Map<String, Map<String, List<Submission>>> submissions; // courseCode -> student -> submissions
+    private Scene homeScene, courseScene, dashboardScene, profileScene, lecturerDashboardScene;
     private String loggedInUser;
-    private Random random = new Random();
 
-    // Data classes
+    // Data models
     private static class User {
-        String userId; // e.g., STU-1234, LEC-1234
-        String username;
-        String password;
-        String fullName;
-        String role; // Student or Lecturer
-        String faculty; // Faculty for lecturers (null for students)
-
+        String userId, username, password, fullName, role, faculty;
         User(String userId, String username, String password, String fullName, String role, String faculty) {
-            this.userId = userId;
-            this.username = username;
-            this.password = password;
-            this.fullName = fullName;
-            this.role = role;
-            this.faculty = faculty;
+            this.userId = userId; this.username = username; this.password = password;
+            this.fullName = fullName; this.role = role; this.faculty = faculty;
         }
     }
 
     private static class Course {
-        String name;
-        String code; // e.g., ARC101
-        String faculty;
-
+        String name, code, faculty;
         Course(String name, String code, String faculty) {
-            this.name = name;
-            this.code = code;
-            this.faculty = faculty;
+            this.name = name; this.code = code; this.faculty = faculty;
         }
     }
 
     private static class Announcement {
-        String id; // Unique ID
-        String courseCode;
-        String content;
-        String postedBy;
-
+        String id, courseCode, content, postedBy;
         Announcement(String id, String courseCode, String content, String postedBy) {
-            this.id = id;
-            this.courseCode = courseCode;
-            this.content = content;
-            this.postedBy = postedBy;
-        }
-    }
-
-    private static class Notification {
-        String id; // Unique ID
-        String content;
-
-        Notification(String id, String content) {
-            this.id = id;
-            this.content = content;
+            this.id = id; this.courseCode = courseCode; this.content = content; this.postedBy = postedBy;
         }
     }
 
     private static class Content {
-        String id; // Unique ID
-        String title;
-        String type; // Video or PDF
-        String data; // Simulated content
-
+        String id, title, type, data;
         Content(String id, String title, String type, String data) {
-            this.id = id;
-            this.title = title;
-            this.type = type;
-            this.data = data;
+            this.id = id; this.title = title; this.type = type; this.data = data;
         }
     }
 
     private static class Message {
-        String id; // Unique ID
-        String courseCode;
-        String sender;
-        String content;
+        String id, courseCode, sender, content;
         long timestamp;
-
         Message(String id, String courseCode, String sender, String content) {
-            this.id = id;
-            this.courseCode = courseCode;
-            this.sender = sender;
-            this.content = content;
+            this.id = id; this.courseCode = courseCode; this.sender = sender; this.content = content;
             this.timestamp = System.currentTimeMillis();
         }
     }
 
     private static class Assessment {
-        String id; // Unique ID
-        String courseCode;
-        String title;
-        String type; // MCQ or ShortAnswer
-        double weight; // 0.0 to 1.0
-        List<String> questions; // For MCQ: "Question|Opt1|Opt2|Opt3|Opt4|Correct", ShortAnswer: "Question"
+        String id, courseCode, title, type;
+        double weight;
+        List<String> questions;
         String postedBy;
-
         Assessment(String id, String courseCode, String title, String type, double weight, List<String> questions, String postedBy) {
-            this.id = id;
-            this.courseCode = courseCode;
-            this.title = title;
-            this.type = type;
-            this.weight = weight;
-            this.questions = questions;
-            this.postedBy = postedBy;
+            this.id = id; this.courseCode = courseCode; this.title = title; this.type = type;
+            this.weight = weight; this.questions = questions; this.postedBy = postedBy;
         }
     }
 
     private static class Submission {
-        String assessmentId;
-        String studentUsername;
-        List<String> answers; // For MCQ: selected options, ShortAnswer: text answers
-        double score; // 0.0 to 100.0
-
+        String assessmentId, studentUsername;
+        List<String> answers;
+        double score;
         Submission(String assessmentId, String studentUsername, List<String> answers, double score) {
-            this.assessmentId = assessmentId;
-            this.studentUsername = studentUsername;
-            this.answers = answers;
-            this.score = score;
+            this.assessmentId = assessmentId; this.studentUsername = studentUsername;
+            this.answers = answers; this.score = score;
         }
     }
 
     @Override
     public void start(Stage primaryStage) {
         this.primaryStage = primaryStage;
-        primaryStage.setTitle("University of Cape Town Learning Management System");
+        createDatabase(); // Ensure schema exists
+        initSampleData(); // Optional: add sample data
 
-        // Initialize data
-        users = new HashMap<>();
-        users.put("student", new User("STU-1001", "student", "pass123", "Student User", "Student", null));
-        users.put("lecturer", new User("LEC-1001", "lecturer", "pass456", "Lecturer User", "Lecturer", "Design"));
-
-        enrolledCourses = new HashMap<>();
-        allCourses = generateUCTCourses();
-        announcements = new HashMap<>();
-        notifications = new ArrayList<>();
-        courseContent = new HashMap<>();
-        messages = new HashMap<>();
-        assessments = new HashMap<>();
-        submissions = new HashMap<>();
-        loggedInUser = null;
-
-        // Create scenes
         homeScene = new Scene(createHomeRoot(), 1000, 700);
-        courseScene = new Scene(createCourseRoot(), 1000, 700);
-        dashboardScene = new Scene(createDashboardRoot(), 1000, 700);
-        profileScene = new Scene(createProfileRoot(), 1000, 700);
-        lecturerDashboardScene = new Scene(createLecturerDashboardRoot(), 1000, 700);
-
         primaryStage.setScene(homeScene);
+        primaryStage.setTitle("UCT LMS");
         primaryStage.show();
     }
 
-    private List<Course> generateUCTCourses() {
+    // --- Database setup ---
+    private void createDatabase() {
+        String sql = "CREATE TABLE IF NOT EXISTS users (" +
+                "user_id VARCHAR(20) PRIMARY KEY," +
+                "username VARCHAR(50) UNIQUE NOT NULL," +
+                "password VARCHAR(255) NOT NULL," +
+                "full_name VARCHAR(100)," +
+                "role VARCHAR(10)," +
+                "faculty VARCHAR(50)" +
+                ");" +
+                "CREATE TABLE IF NOT EXISTS courses (" +
+                "code VARCHAR(10) PRIMARY KEY," +
+                "name VARCHAR(100)," +
+                "faculty VARCHAR(50)" +
+                ");" +
+                "CREATE TABLE IF NOT EXISTS enrollments (" +
+                "username VARCHAR(50)," +
+                "course_code VARCHAR(10)," +
+                "PRIMARY KEY (username, course_code)," +
+                "FOREIGN KEY (username) REFERENCES users(username)," +
+                "FOREIGN KEY (course_code) REFERENCES courses(code)" +
+                ");" +
+                "CREATE TABLE IF NOT EXISTS announcements (" +
+                "id SERIAL PRIMARY KEY," +
+                "course_code VARCHAR(10)," +
+                "content TEXT," +
+                "posted_by VARCHAR(50)," +
+                "posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+                "FOREIGN KEY (course_code) REFERENCES courses(code)," +
+                "FOREIGN KEY (posted_by) REFERENCES users(username)" +
+                ");" +
+                "CREATE TABLE IF NOT EXISTS contents (" +
+                "id SERIAL PRIMARY KEY," +
+                "course_code VARCHAR(10)," +
+                "title VARCHAR(100)," +
+                "type VARCHAR(10)," +
+                "data TEXT," +
+                "FOREIGN KEY (course_code) REFERENCES courses(code)" +
+                ");" +
+                "CREATE TABLE IF NOT EXISTS messages (" +
+                "id SERIAL PRIMARY KEY," +
+                "course_code VARCHAR(10)," +
+                "sender VARCHAR(50)," +
+                "content TEXT," +
+                "sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+                "FOREIGN KEY (course_code) REFERENCES courses(code)," +
+                "FOREIGN KEY (sender) REFERENCES users(username)" +
+                ");" +
+                "CREATE TABLE IF NOT EXISTS assessments (" +
+                "id SERIAL PRIMARY KEY," +
+                "course_code VARCHAR(10)," +
+                "title VARCHAR(100)," +
+                "type VARCHAR(20)," +
+                "weight NUMERIC(3,2)," +
+                "questions TEXT," +
+                "posted_by VARCHAR(50)," +
+                "FOREIGN KEY (course_code) REFERENCES courses(code)," +
+                "FOREIGN KEY (posted_by) REFERENCES users(username)" +
+                ");" +
+                "CREATE TABLE IF NOT EXISTS submissions (" +
+                "id SERIAL PRIMARY KEY," +
+                "assessment_id INTEGER," +
+                "student_username VARCHAR(50)," +
+                "answers TEXT," +
+                "score NUMERIC(5,2)," +
+                "submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+                "FOREIGN KEY (assessment_id) REFERENCES assessments(id)," +
+                "FOREIGN KEY (student_username) REFERENCES users(username)" +
+                ");";
+
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             Statement stmt = conn.createStatement()) {
+            for (String sqlStmt : sql.split(";")) {
+                if (!sqlStmt.trim().isEmpty()) {
+                    stmt.execute(sqlStmt);
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void initSampleData() {
+        // Insert sample users and courses if not exist
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+            if (getUserByUsername("student") == null) {
+                PreparedStatement ps = conn.prepareStatement(
+                        "INSERT INTO users (user_id, username, password, full_name, role, faculty) VALUES (?, ?, ?, ?, ?, ?)");
+                ps.setString(1, "STU-1001");
+                ps.setString(2, "student");
+                ps.setString(3, "pass123");
+                ps.setString(4, "Student User");
+                ps.setString(5, "Student");
+                ps.setString(6, null);
+                ps.executeUpdate();
+            }
+            if (getUserByUsername("lecturer") == null) {
+                PreparedStatement ps = conn.prepareStatement(
+                        "INSERT INTO users (user_id, username, password, full_name, role, faculty) VALUES (?, ?, ?, ?, ?, ?)");
+                ps.setString(1, "LEC-1001");
+                ps.setString(2, "lecturer");
+                ps.setString(3, "pass456");
+                ps.setString(4, "Lecturer User");
+                ps.setString(5, "Lecturer");
+                ps.setString(6, "Design");
+                ps.executeUpdate();
+            }
+            if (getCourseByCode("ARC101") == null) {
+                PreparedStatement ps = conn.prepareStatement("INSERT INTO courses (code, name, faculty) VALUES (?, ?, ?)");
+                ps.setString(1, "ARC101");
+                ps.setString(2, "Architecture");
+                ps.setString(3, "Design");
+                ps.executeUpdate();
+            }
+            if (getCourseByCode("BUS201") == null) {
+                PreparedStatement ps = conn.prepareStatement("INSERT INTO courses (code, name, faculty) VALUES (?, ?, ?)");
+                ps.setString(1, "BUS201");
+                ps.setString(2, "Business Management");
+                ps.setString(3, "Business");
+                ps.executeUpdate();
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Get user by username
+    private User getUserByUsername(String username) {
+        String sql = "SELECT * FROM users WHERE username=?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, username);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new User(rs.getString("user_id"), rs.getString("username"),
+                            rs.getString("password"), rs.getString("full_name"),
+                            rs.getString("role"), rs.getString("faculty"));
+                }
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return null;
+    }
+
+    // Get course by code
+    private Course getCourseByCode(String code) {
+        String sql = "SELECT * FROM courses WHERE code=?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, code);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new Course(rs.getString("name"), rs.getString("code"), rs.getString("faculty"));
+                }
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return null;
+    }
+
+    private List<Course> getAllCourses() {
         List<Course> courses = new ArrayList<>();
-        // Design Faculty
-        courses.add(new Course("Architecture", "ARC101", "Design"));
-        courses.add(new Course("Graphic Design", "GRD102", "Design"));
-        courses.add(new Course("Fashion Design", "FAD103", "Design"));
-        // Business Faculty
-        courses.add(new Course("Business Management", "BUS201", "Business"));
-        courses.add(new Course("Marketing", "MKT202", "Business"));
-        courses.add(new Course("Accounting", "ACC203", "Business"));
-        // IT Faculty
-        courses.add(new Course("Computer Science", "CSC301", "IT"));
-        courses.add(new Course("Information Systems", "INF302", "IT"));
-        courses.add(new Course("Cybersecurity", "CYB303", "IT"));
-        // Communication Faculty
-        courses.add(new Course("Media Studies", "MED401", "Communication"));
-        courses.add(new Course("Public Relations", "PRL402", "Communication"));
-        courses.add(new Course("Journalism", "JRN403", "Communication"));
+        String sql = "SELECT * FROM courses";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             Statement stmt = conn.createStatement();
+             ResultSet rs=stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                courses.add(new Course(rs.getString("name"), rs.getString("code"), rs.getString("faculty")));
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
         return courses;
     }
 
-    private MenuBar createMenuBar() {
-        MenuBar menuBar = new MenuBar();
-        menuBar.setStyle("-fx-background-color: white; -fx-font-size: 14;");
-
-        Menu homeMenu = new Menu("Home");
-        homeMenu.setStyle("-fx-text-fill: white;");
-        MenuItem homeItem = new MenuItem("Go to Home");
-        homeItem.setOnAction(e -> primaryStage.setScene(homeScene));
-        homeMenu.getItems().add(homeItem);
-
-        Menu coursesMenu = new Menu("Courses");
-        coursesMenu.setStyle("-fx-text-fill: white;");
-        MenuItem coursesItem = new MenuItem("View Courses");
-        coursesItem.setOnAction(e -> primaryStage.setScene(courseScene));
-        coursesMenu.getItems().add(coursesItem);
-
-        Menu accountMenu = new Menu("Account");
-        accountMenu.setStyle("-fx-text-fill: white;");
-
-        MenuItem loginItem = new MenuItem("Sign In");
-        loginItem.setOnAction(e -> showSignInForm());
-
-        MenuItem signupItem = new MenuItem("Sign Up");
-        signupItem.setOnAction(e -> showSignUpForm());
-
-        MenuItem dashboardItem = new MenuItem("Dashboard");
-        dashboardItem.setOnAction(e -> {
-            if (loggedInUser != null) {
-                primaryStage.setScene(users.get(loggedInUser).role.equals("Lecturer") ? lecturerDashboardScene : dashboardScene);
-            } else {
-                Alert alert = new Alert(Alert.AlertType.WARNING, "Please sign in first");
-                alert.setHeaderText(null);
-                alert.showAndWait();
+    private List<String> getEnrolledCourses(String username) {
+        List<String> list = new ArrayList<>();
+        String sql = "SELECT course_code FROM enrollments WHERE username=?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, username);
+            try (ResultSet rs=ps.executeQuery()) {
+                while(rs.next()) list.add(rs.getString("course_code"));
             }
-        });
-
-        MenuItem profileItem = new MenuItem("Profile");
-        profileItem.setOnAction(e -> {
-            if (loggedInUser != null) {
-                primaryStage.setScene(profileScene);
-            } else {
-                Alert alert = new Alert(Alert.AlertType.WARNING, "Please sign in first");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            }
-        });
-
-        MenuItem logoutItem = new MenuItem("Sign Out");
-        logoutItem.setOnAction(e -> {
-            loggedInUser = null;
-            enrolledCourses.remove("student"); // Reset for demo
-            primaryStage.setScene(homeScene);
-            Alert alert = new Alert(Alert.AlertType.INFORMATION, "Signed out successfully");
-            alert.setHeaderText(null);
-            alert.showAndWait();
-        });
-
-        accountMenu.getItems().addAll(loginItem, signupItem, new SeparatorMenuItem(), dashboardItem, profileItem, logoutItem);
-        menuBar.getMenus().addAll(homeMenu, coursesMenu, accountMenu);
-        return menuBar;
+        } catch (SQLException e) { e.printStackTrace(); }
+        return list;
     }
 
-    private void showSignInForm() {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Sign In");
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-        form.setAlignment(Pos.CENTER);
-
-        Label title = new Label("Sign In");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        TextField usernameField = new TextField();
-        usernameField.setPromptText("Username");
-        usernameField.setStyle("-fx-font-size: 14;");
-
-        PasswordField passwordField = new PasswordField();
-        passwordField.setPromptText("Password");
-        passwordField.setStyle("-fx-font-size: 14;");
-
-        Button signInButton = new Button("Sign In");
-        signInButton.setStyle("-fx-background-color: green; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        Button cancelButton = new Button("Cancel");
-        cancelButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        HBox buttonBox = new HBox(10, signInButton, cancelButton);
-        buttonBox.setAlignment(Pos.CENTER);
-
-        signInButton.setOnAction(e -> {
-            String username = usernameField.getText().trim();
-            String password = passwordField.getText().trim();
-
-            if (username.isEmpty() || password.isEmpty()) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Username and password are required");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else if (!users.containsKey(username)) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Username not found");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else if (!users.get(username).password.equals(password)) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Incorrect password");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else {
-                loggedInUser = username;
-                notifications.add(new Notification(UUID.randomUUID().toString(), "User '" + username + "' signed in"));
-                Alert alert = new Alert(Alert.AlertType.INFORMATION, "Signed in successfully as " + users.get(username).role);
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                dialog.close();
-                refreshScenes();
-                primaryStage.setScene(users.get(loggedInUser).role.equals("Lecturer") ? lecturerDashboardScene : dashboardScene);
-            }
-        });
-
-        cancelButton.setOnAction(e -> dialog.close());
-
-        form.getChildren().addAll(title, usernameField, passwordField, buttonBox);
-
-        Scene dialogScene = new Scene(form, 300, 250);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
-    }
-
-    private void showSignUpForm() {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Sign Up");
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-        form.setAlignment(Pos.CENTER);
-
-        Label title = new Label("Sign Up");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        TextField usernameField = new TextField();
-        usernameField.setPromptText("Username");
-        usernameField.setStyle("-fx-font-size: 14;");
-
-        PasswordField passwordField = new PasswordField();
-        passwordField.setPromptText("Password");
-        passwordField.setStyle("-fx-font-size: 14;");
-
-        TextField fullNameField = new TextField();
-        fullNameField.setPromptText("Full Name");
-        fullNameField.setStyle("-fx-font-size: 14;");
-
-        ComboBox<String> roleCombo = new ComboBox<>();
-        roleCombo.getItems().addAll("Student", "Lecturer");
-        roleCombo.setPromptText("Select Role");
-        roleCombo.setStyle("-fx-font-size: 14;");
-
-        ComboBox<String> facultyCombo = new ComboBox<>();
-        facultyCombo.getItems().addAll("Design", "Business", "IT", "Communication");
-        facultyCombo.setPromptText("Select Faculty (Lecturers only)");
-        facultyCombo.setStyle("-fx-font-size: 14;");
-        facultyCombo.setDisable(true); // Disabled by default until lecturer is selected
-
-        // Enable faculty selection only when lecturer is selected
-        roleCombo.valueProperty().addListener((obs, oldVal, newVal) -> {
-            facultyCombo.setDisable(!newVal.equals("Lecturer"));
-            if (!newVal.equals("Lecturer")) {
-                facultyCombo.getSelectionModel().clearSelection();
-            }
-        });
-
-        Button signUpButton = new Button("Sign Up");
-        signUpButton.setStyle("-fx-background-color: green; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        Button cancelButton = new Button("Cancel");
-        cancelButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        HBox buttonBox = new HBox(10, signUpButton, cancelButton);
-        buttonBox.setAlignment(Pos.CENTER);
-
-        signUpButton.setOnAction(e -> {
-            String username = usernameField.getText().trim();
-            String password = passwordField.getText().trim();
-            String fullName = fullNameField.getText().trim();
-            String role = roleCombo.getValue();
-            String faculty = role != null && role.equals("Lecturer") ? facultyCombo.getValue() : null;
-
-            if (username.isEmpty() || password.isEmpty() || fullName.isEmpty() || role == null) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "All fields are required");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else if (users.containsKey(username)) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Username already exists");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else if (role.equals("Lecturer") && faculty == null) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Faculty is required for lecturers");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else {
-                // Create new user
-                String userId = (role.equals("Student") ? "STU-" : "LEC-") + (1000 + users.size() + 1);
-                users.put(username, new User(userId, username, password, fullName, role, faculty));
-
-                // For demo, auto-enroll students in some courses
-                if (role.equals("Student")) {
-                    List<String> courses = new ArrayList<>();
-                    courses.add("ARC101");
-                    courses.add("BUS201");
-                    enrolledCourses.put(username, courses);
+    private List<Announcement> getAnnouncementsForCourse(String courseCode) {
+        List<Announcement> list = new ArrayList<>();
+        String sql = "SELECT * FROM announcements WHERE course_code=?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, courseCode);
+            try (ResultSet rs=ps.executeQuery()) {
+                while(rs.next()) {
+                    list.add(new Announcement(rs.getString("id"), rs.getString("course_code"), rs.getString("content"), rs.getString("posted_by")));
                 }
-
-                notifications.add(new Notification(UUID.randomUUID().toString(), "New user '" + username + "' registered as " + role));
-                Alert alert = new Alert(Alert.AlertType.INFORMATION, "Account created successfully! Please sign in.");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                dialog.close();
-                showSignInForm();
             }
-        });
-
-        cancelButton.setOnAction(e -> dialog.close());
-
-        form.getChildren().addAll(title, usernameField, passwordField, fullNameField, roleCombo, facultyCombo, buttonBox);
-
-        Scene dialogScene = new Scene(form, 400, 400);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
+        } catch (SQLException e) { e.printStackTrace(); }
+        return list;
     }
 
-    private VBox createSidebar(String activePage, boolean isHome) {
-        VBox sidebar = new VBox(10);
-        sidebar.setStyle("-fx-background-color: #2d3e50; -fx-padding: 20;");
-        sidebar.setPrefWidth(200);
-
-        Label logo = new Label("LMS");
-        logo.setFont(Font.font("Arial", FontWeight.BOLD, 24));
-        logo.setTextFill(Color.WHITE);
-        logo.setPadding(new Insets(0, 0, 20, 0));
-
-        Button homeButton = new Button("Home");
-        homeButton.setStyle(activePage.equals("Home") ?
-                "-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;" :
-                "-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        homeButton.setMaxWidth(Double.MAX_VALUE);
-        homeButton.setOnAction(e -> primaryStage.setScene(homeScene));
-
-        Button coursesButton = new Button("Courses");
-        coursesButton.setStyle(activePage.equals("Courses") ?
-                "-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;" :
-                "-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        coursesButton.setMaxWidth(Double.MAX_VALUE);
-        coursesButton.setOnAction(e -> primaryStage.setScene(courseScene));
-
-        Button dashboardButton = new Button("Dashboard");
-        dashboardButton.setStyle(activePage.equals("Dashboard") || activePage.equals("Lecturer Dashboard") ?
-                "-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;" :
-                "-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        dashboardButton.setMaxWidth(Double.MAX_VALUE);
-        dashboardButton.setOnAction(e -> {
-            if (loggedInUser != null) {
-                primaryStage.setScene(users.get(loggedInUser).role.equals("Lecturer") ? lecturerDashboardScene : dashboardScene);
-            } else {
-                Alert alert = new Alert(Alert.AlertType.WARNING, "Please sign in first");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            }
-        });
-
-        Button profileButton = new Button("Profile");
-        profileButton.setStyle(activePage.equals("Profile") ?
-                "-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;" :
-                "-fx-background-color: transparent; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        profileButton.setMaxWidth(Double.MAX_VALUE);
-        profileButton.setOnAction(e -> {
-            if (loggedInUser != null) {
-                primaryStage.setScene(profileScene);
-            } else {
-                Alert alert = new Alert(Alert.AlertType.WARNING, "Please sign in first");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            }
-        });
-
-        sidebar.getChildren().addAll(logo, homeButton, coursesButton, dashboardButton, profileButton);
-        VBox.setVgrow(sidebar, Priority.ALWAYS);
-        return sidebar;
-    }
-
-    private VBox createCourseCard(String courseName, String courseDisplay) {
-        VBox card = new VBox(10);
-        card.setStyle("-fx-background-color: #ffffff; -fx-border-color: #e0e0e0; -fx-border-width: 1; -fx-padding: 15; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 10, 0, 0, 2);");
-        card.setPrefWidth(250);
-
-        Label title = new Label(courseDisplay);
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-        title.setTextFill(Color.web("#1a252f"));
-        title.setWrapText(true);
-
-        Button enrollButton = new Button(loggedInUser != null && enrolledCourses.getOrDefault(loggedInUser, new ArrayList<>()).contains(courseDisplay.substring(courseDisplay.lastIndexOf("(") + 1, courseDisplay.length() - 1)) ? "Enrolled" : "Enroll");
-        enrollButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 12; -fx-padding: 5 10;");
-        enrollButton.setDisable(loggedInUser != null && enrolledCourses.getOrDefault(loggedInUser, new ArrayList<>()).contains(courseDisplay.substring(courseDisplay.lastIndexOf("(") + 1, courseDisplay.length() - 1)));
-        enrollButton.setOnAction(e -> {
-            if (loggedInUser == null) {
-                Alert alert = new Alert(Alert.AlertType.WARNING, "Please sign in first");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                return;
-            }
-            if (users.get(loggedInUser).role.equals("Lecturer")) {
-                Alert alert = new Alert(Alert.AlertType.WARNING, "Lecturers cannot enroll in courses");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                return;
-            }
-            String courseCode = courseDisplay.substring(courseDisplay.lastIndexOf("(") + 1, courseDisplay.length() - 1);
-            List<String> userCourses = enrolledCourses.getOrDefault(loggedInUser, new ArrayList<>());
-            if (!userCourses.contains(courseCode)) {
-                userCourses.add(courseCode);
-                enrolledCourses.put(loggedInUser, userCourses);
-                Alert alert = new Alert(Alert.AlertType.INFORMATION, "Enrolled in " + courseName);
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                refreshScenes();
-                primaryStage.setScene(courseScene);
-            }
-        });
-
-        card.getChildren().addAll(title, enrollButton);
-        card.setOnMouseEntered(e -> {
-            ScaleTransition st = new ScaleTransition(Duration.millis(200), card);
-            st.setToX(1.05);
-            st.setToY(1.05);
-            st.play();
-        });
-        card.setOnMouseExited(e -> {
-            ScaleTransition st = new ScaleTransition(Duration.millis(200), card);
-            st.setToX(1.0);
-            st.setToY(1.0);
-            st.play();
-        });
-
-        return card;
-    }
-
-    private VBox createSummaryCard(String title, String value) {
-        VBox card = new VBox(10);
-        card.setStyle("-fx-background-color: #ffffff; -fx-border-color: #e0e0e0; -fx-border-width: 1; -fx-padding: 15; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 10, 0, 0, 2);");
-        card.setPrefWidth(200);
-        card.setAlignment(Pos.CENTER);
-
-        Label titleLabel = new Label(title);
-        titleLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-        titleLabel.setTextFill(Color.web("#1a252f"));
-
-        Label valueLabel = new Label(value);
-        valueLabel.setFont(Font.font("Arial", 24));
-        valueLabel.setTextFill(Color.web("#00c4b4"));
-
-        card.getChildren().addAll(titleLabel, valueLabel);
-        return card;
-    }
-
-    private void showSubmitAssessmentDialog(Assessment assessment) {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Submit Assessment: " + assessment.title);
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-        form.setAlignment(Pos.CENTER);
-
-        Label title = new Label("Submit Assessment: " + assessment.title);
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        List<String> answers = new ArrayList<>();
-        VBox questionBox = new VBox(10);
-        ScrollPane questionScroll = new ScrollPane(questionBox);
-        questionScroll.setFitToWidth(true);
-        questionScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-
-        if (assessment.type.equals("Multiple Choice")) {
-            for (int i = 0; i < assessment.questions.size(); i++) {
-                String[] parts = assessment.questions.get(i).split("\\|");
-                Label questionLabel = new Label((i + 1) + ". " + parts[0]);
-                questionLabel.setFont(Font.font("Arial", 14));
-                questionLabel.setTextFill(Color.web("#1a252f"));
-                questionLabel.setWrapText(true);
-                ToggleGroup group = new ToggleGroup();
-                VBox optionsBox = new VBox(5);
-                for (int j = 1; j <= 4; j++) {
-                    RadioButton option = new RadioButton(parts[j]);
-                    option.setToggleGroup(group);
-                    option.setStyle("-fx-font-size: 12;");
-                    optionsBox.getChildren().add(option);
+    private List<Content> getContentsForCourse(String courseCode) {
+        List<Content> list = new ArrayList<>();
+        String sql = "SELECT * FROM contents WHERE course_code=?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, courseCode);
+            try (ResultSet rs=ps.executeQuery()) {
+                while(rs.next()) {
+                    list.add(new Content(rs.getString("id"), rs.getString("title"), rs.getString("type"), rs.getString("data")));
                 }
-                questionBox.getChildren().addAll(questionLabel, optionsBox);
-                int finalI = i;
-                group.selectedToggleProperty().addListener((obs, old, newToggle) -> {
-                    while (answers.size() <= finalI) answers.add(null);
-                    answers.set(finalI, newToggle != null ? ((RadioButton) newToggle).getText() : null);
-                });
             }
-        } else {
-            for (int i = 0; i < assessment.questions.size(); i++) {
-                Label questionLabel = new Label((i + 1) + ". " + assessment.questions.get(i));
-                questionLabel.setFont(Font.font("Arial", 14));
-                questionLabel.setTextFill(Color.web("#1a252f"));
-                questionLabel.setWrapText(true);
-                TextArea answerField = new TextArea();
-                answerField.setPromptText("Enter your answer");
-                answerField.setStyle("-fx-font-size: 12;");
-                answerField.setPrefRowCount(3);
-                int finalI = i;
-                answerField.textProperty().addListener((obs, old, newText) -> {
-                    while (answers.size() <= finalI) answers.add(null);
-                    answers.set(finalI, newText.trim());
-                });
-                questionBox.getChildren().addAll(questionLabel, answerField);
-            }
-        }
-
-        Button submitButton = new Button("Submit");
-        submitButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        Button cancelButton = new Button("Cancel");
-        cancelButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        HBox buttonBox = new HBox(10, submitButton, cancelButton);
-        buttonBox.setAlignment(Pos.CENTER);
-
-        submitButton.setOnAction(e -> {
-            if (answers.stream().anyMatch(Objects::isNull)) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Please answer all questions");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                return;
-            }
-            Map<String, List<Submission>> courseSubmissions = submissions.getOrDefault(assessment.courseCode, new HashMap<>());
-            List<Submission> studentSubmissions = courseSubmissions.getOrDefault(loggedInUser, new ArrayList<>());
-            studentSubmissions.add(new Submission(assessment.id, loggedInUser, answers, 0.0)); // Score to be graded later
-            courseSubmissions.put(loggedInUser, studentSubmissions);
-            submissions.put(assessment.courseCode, courseSubmissions);
-            notifications.add(new Notification(UUID.randomUUID().toString(), "Assessment '" + assessment.title + "' submitted by " + loggedInUser));
-            Alert alert = new Alert(Alert.AlertType.INFORMATION, "Assessment submitted successfully!");
-            alert.setHeaderText(null);
-            alert.showAndWait();
-            dialog.close();
-            refreshScenes();
-            primaryStage.setScene(dashboardScene);
-        });
-
-        cancelButton.setOnAction(e -> dialog.close());
-
-        form.getChildren().addAll(title, questionScroll, buttonBox);
-
-        Scene dialogScene = new Scene(form, 500, 600);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
+        } catch (SQLException e) { e.printStackTrace(); }
+        return list;
     }
 
-    private void refreshScenes() {
-        homeScene.setRoot(createHomeRoot());
-        courseScene.setRoot(createCourseRoot());
-        dashboardScene.setRoot(createDashboardRoot());
-        profileScene.setRoot(createProfileRoot());
-        lecturerDashboardScene.setRoot(createLecturerDashboardRoot());
+    private List<Message> getMessagesForCourse(String courseCode) {
+        List<Message> list = new ArrayList<>();
+        String sql = "SELECT * FROM messages WHERE course_code=?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, courseCode);
+            try (ResultSet rs=ps.executeQuery()) {
+                while(rs.next()) {
+                    list.add(new Message(rs.getString("id"), rs.getString("course_code"), rs.getString("sender"), rs.getString("content")));
+                }
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return list;
     }
 
+    // CRUD for enrollment
+    private void enrollCourse(String username, String courseCode) {
+        String sql = "INSERT INTO enrollments (username, course_code) VALUES (?, ?)";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, username);
+            ps.setString(2, courseCode);
+            ps.executeUpdate();
+        } catch (SQLException e) { e.printStackTrace(); }
+    }
+
+    private void unenrollCourse(String username, String courseCode) {
+        String sql = "DELETE FROM enrollments WHERE username=? AND course_code=?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, username);
+            ps.setString(2, courseCode);
+            ps.executeUpdate();
+        } catch (SQLException e) { e.printStackTrace(); }
+    }
+
+    // --- GUI: Create root panes ---
     private BorderPane createHomeRoot() {
         MenuBar menuBar = createMenuBar();
         VBox sidebar = createSidebar("Home", true);
-
         VBox header = new VBox(10);
         header.setStyle("-fx-background-color: #1a252f; -fx-padding: 20;");
-        Label welcomeLabel = new Label("Welcome to University of Cape Town LMS");
-        welcomeLabel.setFont(Font.font("Arial", FontWeight.BOLD, 24));
-        welcomeLabel.setTextFill(Color.WHITE);
-        Label subtitle = new Label("Explore our diverse range of courses across multiple faculties");
+        Label lbl = new Label("Welcome to UCT LMS");
+        lbl.setFont(Font.font("Arial", FontWeight.BOLD, 24));
+        lbl.setTextFill(Color.WHITE);
+        Label subtitle = new Label("Explore our courses across faculties");
         subtitle.setFont(Font.font("Arial", 14));
         subtitle.setTextFill(Color.web("#cccccc"));
-        header.getChildren().addAll(welcomeLabel, subtitle);
-        header.setAlignment(Pos.CENTER_LEFT);
+        header.getChildren().addAll(lbl, subtitle);
 
-        // Add login/signup buttons if not logged in
-        if (loggedInUser == null) {
-            HBox authButtons = new HBox(10);
-            authButtons.setAlignment(Pos.CENTER);
-
-            Button loginButton = new Button("Sign In");
-            loginButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-            loginButton.setOnAction(e -> showSignInForm());
-
-            Button signupButton = new Button("Sign Up");
-            signupButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-            signupButton.setOnAction(e -> showSignUpForm());
-
-            authButtons.getChildren().addAll(loginButton, signupButton);
-            header.getChildren().add(authButtons);
-        } else {
-            Label userLabel = new Label("Welcome, " + users.get(loggedInUser).fullName + " (" + users.get(loggedInUser).role + ")");
-            userLabel.setFont(Font.font("Arial", 14));
-            userLabel.setTextFill(Color.web("#00c4b4"));
-            header.getChildren().add(userLabel);
-        }
-
-        Accordion facultyAccordion = new Accordion();
-        facultyAccordion.setStyle("-fx-background-color: #ffffff; -fx-border-color: #e0e0e0; -fx-border-width: 1;");
-
-        for (String faculty : Arrays.asList("Design", "Business", "IT", "Communication")) {
-            TitledPane pane = new TitledPane();
-            pane.setText("Faculty of " + faculty);
-            pane.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1a252f;");
-            GridPane grid = createFacultyGrid(allCourses.stream()
-                    .filter(c -> c.faculty.equals(faculty))
-                    .map(c -> c.name + " (" + c.code + ")")
-                    .collect(Collectors.toList()));
-            pane.setContent(grid);
-            facultyAccordion.getPanes().add(pane);
-        }
-
-        ScrollPane facultyScroll = new ScrollPane(facultyAccordion);
-        facultyScroll.setFitToWidth(true);
-        facultyScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-
-        VBox mainContent = new VBox(10, header, facultyScroll);
-        mainContent.setStyle("-fx-background-color: #ffffff;");
-        mainContent.setPadding(new Insets(20));
-
+        VBox mainBox = new VBox(10);
+        mainBox.setPadding(new Insets(20));
+        // Buttons
+        HBox btnBox = new HBox(10);
+        btnBox.setAlignment(Pos.CENTER);
+        Button btnSignIn = new Button("Sign In");
+        btnSignIn.setStyle("-fx-background-color:#00c4b4; -fx-text-fill: white;");
+        btnSignIn.setOnAction(e -> showSignInDialog());
+        Button btnSignUp = new Button("Sign Up");
+        btnSignUp.setStyle("-fx-background-color:#fff; -fx-text-fill:#00c4b4; -fx-border-color:#00c4b4;");
+        btnSignUp.setOnAction(e -> showSignUpDialog());
+        btnBox.getChildren().addAll(btnSignIn, btnSignUp);
+        mainBox.getChildren().addAll(header, btnBox);
+        ScrollPane sp = new ScrollPane(mainBox);
+        sp.setFitToWidth(true);
         BorderPane root = new BorderPane();
         root.setTop(menuBar);
         root.setLeft(sidebar);
-        root.setCenter(mainContent);
-        BorderPane.setMargin(mainContent, new Insets(0, 20, 20, 20));
-
+        root.setCenter(sp);
         return root;
     }
 
-    private GridPane createFacultyGrid(List<String> facultyCourses) {
+    private Scene createCourseRoot() {
+        MenuBar menuBar = createMenuBar();
+        VBox sidebar = createSidebar("Courses", false);
         GridPane grid = new GridPane();
         grid.setHgap(20);
         grid.setVgap(20);
-        grid.setPadding(new Insets(10));
-        int col = 0;
-        int row = 0;
-        for (String course : facultyCourses) {
-            String courseName = course.substring(0, course.lastIndexOf(" ("));
-            VBox courseCard = createCourseCard(courseName, course);
-            grid.add(courseCard, col, row);
+        grid.setPadding(new Insets(20));
+        List<Course> allCourses = getAllCourses();
+        int col=0, row=0;
+        for (Course c : allCourses) {
+            VBox card = createCourseCard(c.name, c.code);
+            grid.add(card, col, row);
             col++;
-            if (col > 2) {
-                col = 0;
-                row++;
-            }
+            if (col > 2) { col=0; row++; }
         }
-        return grid;
-    }
-
-    private BorderPane createCourseRoot() {
-        MenuBar menuBar = createMenuBar();
-        VBox sidebar = createSidebar("Courses", false);
-        VBox courseContainer = new VBox(20);
-        courseContainer.setPadding(new Insets(20));
-        GridPane courseGrid = new GridPane();
-        courseGrid.setHgap(20);
-        courseGrid.setVgap(20);
-        courseGrid.setPadding(new Insets(10));
-        int col = 0;
-        int row = 0;
-        for (Course course : allCourses) {
-            VBox courseCard = createCourseCard(course.name, course.name + " (" + course.code + ")");
-            courseGrid.add(courseCard, col, row);
-            col++;
-            if (col > 2) {
-                col = 0;
-                row++;
-            }
-        }
-        courseContainer.getChildren().add(courseGrid);
-        ScrollPane scrollPane = new ScrollPane(courseContainer);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-
-        VBox mainContent = new VBox(10, scrollPane);
-        mainContent.setStyle("-fx-background-color: #ffffff;");
-
+        ScrollPane sp = new ScrollPane(grid);
+        sp.setFitToWidth(true);
         BorderPane root = new BorderPane();
         root.setTop(menuBar);
         root.setLeft(sidebar);
-        root.setCenter(mainContent);
-        BorderPane.setMargin(mainContent, new Insets(0, 20, 20, 20));
-
-        return root;
+        root.setCenter(sp);
+        return new Scene(root, 1000, 700);
     }
 
     private BorderPane createDashboardRoot() {
         MenuBar menuBar = createMenuBar();
         VBox sidebar = createSidebar("Dashboard", false);
+        VBox mainBox = new VBox(10);
+        mainBox.setPadding(new Insets(20));
+        Label lbl = new Label("Dashboard");
+        lbl.setFont(Font.font("Arial", FontWeight.BOLD, 24));
+        lbl.setTextFill(Color.web("#1a252f"));
+        mainBox.getChildren().add(lbl);
+        List<String> userCourses = getEnrolledCourses(loggedInUser);
+        HBox summary = new HBox(10);
+        summary.getChildren().addAll(
+                createSummaryCard("Enrolled", String.valueOf(userCourses.size())),
+                createSummaryCard("Completed", "0"),
+                createSummaryCard("Ongoing", String.valueOf(userCourses.size()))
+        );
+        mainBox.getChildren().add(summary);
 
-        VBox header = new VBox(10);
-        header.setStyle("-fx-background-color: #1a252f; -fx-padding: 20;");
-        Label welcomeLabel = new Label("Welcome to Your Dashboard");
-        welcomeLabel.setFont(Font.font("Arial", FontWeight.BOLD, 24));
-        welcomeLabel.setTextFill(Color.WHITE);
-        Label subtitle = new Label("Track your progress and manage your courses");
-        subtitle.setFont(Font.font("Arial", 14));
-        subtitle.setTextFill(Color.web("#cccccc"));
-        header.getChildren().addAll(welcomeLabel, subtitle);
-        header.setAlignment(Pos.CENTER_LEFT);
-
-        GridPane summaryGrid = new GridPane();
-        summaryGrid.setHgap(20);
-        summaryGrid.setVgap(20);
-        summaryGrid.setPadding(new Insets(20));
-        List<String> userCourses = enrolledCourses.getOrDefault(loggedInUser, new ArrayList<>());
-        summaryGrid.add(createSummaryCard("Enrolled Courses", userCourses.size() + ""), 0, 0);
-        summaryGrid.add(createSummaryCard("Completed Courses", "0"), 1, 0);
-        summaryGrid.add(createSummaryCard("Ongoing Courses", userCourses.size() + ""), 2, 0);
-
-        VBox announcementsBox = new VBox(10);
-        announcementsBox.setPadding(new Insets(20));
-        announcementsBox.setStyle("-fx-background-color: #f4f6f8; -fx-border-color: #e0e0e0; -fx-border-width: 1;");
-        Label announcementsLabel = new Label("Course Announcements");
-        announcementsLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-        announcementsLabel.setTextFill(Color.web("#1a252f"));
-        VBox announcementList = new VBox(5);
-        boolean hasAnnouncements = false;
-        for (String courseCode : userCourses) {
-            List<Announcement> courseAnnouncements = announcements.getOrDefault(courseCode, new ArrayList<>());
-            if (!courseAnnouncements.isEmpty()) {
-                hasAnnouncements = true;
-                Course course = allCourses.stream().filter(c -> c.code.equals(courseCode)).findFirst().orElse(null);
-                Label courseTitle = new Label(course != null ? course.name : courseCode);
-                courseTitle.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-                courseTitle.setTextFill(Color.web("#1a252f"));
-                announcementList.getChildren().add(courseTitle);
-                for (Announcement ann : courseAnnouncements) {
-                    Label annLabel = new Label("• " + ann.content + " (by " + ann.postedBy + ")");
-                    annLabel.setFont(Font.font("Arial", 12));
-                    annLabel.setTextFill(Color.web("#666666"));
-                    annLabel.setWrapText(true);
-                    announcementList.getChildren().add(annLabel);
+        // Announcements
+        VBox annBox = new VBox(10);
+        annBox.setPadding(new Insets(10));
+        Label annLbl = new Label("Announcements");
+        annLbl.setFont(Font.font("Arial", FontWeight.BOLD, 16));
+        VBox annList = new VBox(5);
+        boolean hasAnn = false;
+        for (String code : userCourses) {
+            List<Announcement> anns = getAnnouncementsForCourse(code);
+            if (!anns.isEmpty()) {
+                hasAnn = true;
+                Label courseLbl = new Label(getCourseName(code));
+                courseLbl.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+                courseLbl.setTextFill(Color.web("#1a252f"));
+                annList.getChildren().add(courseLbl);
+                for (Announcement a : anns) {
+                    Label lblAnn = new Label("• " + a.content + " (by " + a.postedBy + ")");
+                    lblAnn.setWrapText(true);
+                    lblAnn.setFont(Font.font("Arial", 12));
+                    lblAnn.setTextFill(Color.web("#666666"));
+                    annList.getChildren().add(lblAnn);
                 }
             }
         }
-        if (!hasAnnouncements) {
-            Label noAnnouncements = new Label("No announcements yet.");
-            noAnnouncements.setFont(Font.font("Arial", 14));
-            noAnnouncements.setTextFill(Color.web("#666666"));
-            announcementList.getChildren().add(noAnnouncements);
+        if (!hasAnn) {
+            annList.getChildren().add(new Label("No announcements."));
         }
-        ScrollPane announcementScroll = new ScrollPane(announcementList);
-        announcementScroll.setFitToWidth(true);
-        announcementScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-        announcementsBox.getChildren().addAll(announcementsLabel, announcementScroll);
+        ScrollPane annScroll = new ScrollPane(annList);
+        annScroll.setFitToWidth(true);
+        annBox.getChildren().addAll(annLbl, annScroll);
+        mainBox.getChildren().add(annBox);
 
+        // Content
         VBox contentBox = new VBox(10);
-        contentBox.setPadding(new Insets(20));
-        contentBox.setStyle("-fx-background-color: #f4f6f8; -fx-border-color: #e0e0e0; -fx-border-width: 1;");
-        Label contentLabel = new Label("Course Content");
-        contentLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-        contentLabel.setTextFill(Color.web("#1a252f"));
+        Label contentLbl = new Label("Content");
+        contentLbl.setFont(Font.font("Arial", FontWeight.BOLD, 16));
         VBox contentList = new VBox(5);
         boolean hasContent = false;
-        for (String courseCode : userCourses) {
-            List<Content> courseContents = courseContent.getOrDefault(courseCode, new ArrayList<>());
-            if (!courseContents.isEmpty()) {
+        for (String code : userCourses) {
+            List<Content> cList = getContentsForCourse(code);
+            if (!cList.isEmpty()) {
                 hasContent = true;
-                Course course = allCourses.stream().filter(c -> c.code.equals(courseCode)).findFirst().orElse(null);
-                Label courseTitle = new Label(course != null ? course.name : courseCode);
-                courseTitle.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-                courseTitle.setTextFill(Color.web("#1a252f"));
-                contentList.getChildren().add(courseTitle);
-                for (Content content : courseContents) {
-                    Label contentLabelItem = new Label("• " + content.title + " (" + content.type + ")");
-                    contentLabelItem.setFont(Font.font("Arial", 12));
-                    contentLabelItem.setTextFill(Color.web("#666666"));
-                    contentLabelItem.setWrapText(true);
-                    contentList.getChildren().add(contentLabelItem);
+                Label courseLbl = new Label(getCourseName(code));
+                courseLbl.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+                courseLbl.setTextFill(Color.web("#1a252f"));
+                contentList.getChildren().add(courseLbl);
+                for (Content c : cList) {
+                    Label lblC = new Label("• " + c.title + " (" + c.type + ")");
+                    lblC.setFont(Font.font("Arial", 12));
+                    lblC.setTextFill(Color.web("#666666"));
+                    lblC.setWrapText(true);
+                    contentList.getChildren().add(lblC);
                 }
             }
         }
         if (!hasContent) {
-            Label noContent = new Label("No content available yet.");
-            noContent.setFont(Font.font("Arial", 14));
-            noContent.setTextFill(Color.web("#666666"));
-            contentList.getChildren().add(noContent);
+            contentList.getChildren().add(new Label("No content."));
         }
         ScrollPane contentScroll = new ScrollPane(contentList);
         contentScroll.setFitToWidth(true);
-        contentScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-        contentBox.getChildren().addAll(contentLabel, contentScroll);
+        contentBox.getChildren().addAll(contentLbl, contentScroll);
+        mainBox.getChildren().add(contentBox);
 
-        VBox assessmentsBox = new VBox(10);
-        assessmentsBox.setPadding(new Insets(20));
-        assessmentsBox.setStyle("-fx-background-color: #f4f6f8; -fx-border-color: #e0e0e0; -fx-border-width: 1;");
-        Label assessmentsLabel = new Label("Assessments");
-        assessmentsLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-        assessmentsLabel.setTextFill(Color.web("#1a252f"));
-        VBox assessmentList = new VBox(5);
-        boolean hasAssessments = false;
-        for (String courseCode : userCourses) {
-            List<Assessment> courseAssessments = assessments.getOrDefault(courseCode, new ArrayList<>());
-            if (!courseAssessments.isEmpty()) {
-                hasAssessments = true;
-                Course course = allCourses.stream().filter(c -> c.code.equals(courseCode)).findFirst().orElse(null);
-                Label courseTitle = new Label(course != null ? course.name : courseCode);
-                courseTitle.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-                courseTitle.setTextFill(Color.web("#1a252f"));
-                assessmentList.getChildren().add(courseTitle);
-                for (Assessment assessment : courseAssessments) {
-                    VBox assessmentItem = new VBox(5);
-                    Label titleLabel = new Label(assessment.title + " (" + assessment.type + ")");
-                    titleLabel.setFont(Font.font("Arial", 12));
-                    titleLabel.setTextFill(Color.web("#666666"));
-                    Button submitButton = new Button("Submit");
-                    submitButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 12; -fx-padding: 5 10;");
-                    final Assessment finalAssessment = assessment;
-                    submitButton.setOnAction(e -> showSubmitAssessmentDialog(finalAssessment));
-                    assessmentItem.getChildren().addAll(titleLabel, submitButton);
-                    assessmentList.getChildren().add(assessmentItem);
+        // Assessments
+        VBox assessBox = new VBox(10);
+        Label assessLbl = new Label("Assessments");
+        assessLbl.setFont(Font.font("Arial", FontWeight.BOLD, 16));
+        VBox assessList = new VBox(5);
+        boolean hasAssess = false;
+        for (String code : userCourses) {
+            List<Assessment> aList = getAssessmentsForCourse(code);
+            if (!aList.isEmpty()) {
+                hasAssess = true;
+                Label courseLbl = new Label(getCourseName(code));
+                courseLbl.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+                courseLbl.setTextFill(Color.web("#1a252f"));
+                assessList.getChildren().add(courseLbl);
+                for (Assessment a : aList) {
+                    HBox item = new HBox(10);
+                    Label lblA = new Label(a.title + " (" + a.type + ")");
+                    lblA.setFont(Font.font("Arial", 12));
+                    lblA.setTextFill(Color.web("#666666"));
+                    Button submitBtn = new Button("Submit");
+                    submitBtn.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+                    final Assessment finalA = a;
+                    submitBtn.setOnAction(e -> showAssessmentSubmission(finalA));
+                    item.getChildren().addAll(lblA, submitBtn);
+                    assessList.getChildren().add(item);
                 }
             }
         }
-        if (!hasAssessments) {
-            Label noAssessments = new Label("No assessments available yet.");
-            noAssessments.setFont(Font.font("Arial", 14));
-            noAssessments.setTextFill(Color.web("#666666"));
-            assessmentList.getChildren().add(noAssessments);
+        if (!hasAssess) {
+            assessList.getChildren().add(new Label("No assessments."));
         }
-        ScrollPane assessmentScroll = new ScrollPane(assessmentList);
-        assessmentScroll.setFitToWidth(true);
-        assessmentScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-        assessmentsBox.getChildren().addAll(assessmentsLabel, assessmentScroll);
+        ScrollPane assessScroll = new ScrollPane(assessList);
+        assessScroll.setFitToWidth(true);
+        assessBox.getChildren().addAll( assessLbl, assessScroll);
+        mainBox.getChildren().add(assessBox);
 
-        VBox messagesBox = new VBox(10);
-        messagesBox.setPadding(new Insets(20));
-        messagesBox.setStyle("-fx-background-color: #f4f6f8; -fx-border-color: #e0e0e0; -fx-border-width: 1;");
-        Label messagesLabel = new Label("Discussion Forum");
-        messagesLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-        messagesLabel.setTextFill(Color.web("#1a252f"));
-        VBox messageList = new VBox(5);
-        boolean hasMessages = false;
-        for (String courseCode : userCourses) {
-            List<Message> courseMessages = messages.getOrDefault(courseCode, new ArrayList<>());
-            if (!courseMessages.isEmpty()) {
-                hasMessages = true;
-                Course course = allCourses.stream().filter(c -> c.code.equals(courseCode)).findFirst().orElse(null);
-                Label courseTitle = new Label(course != null ? course.name : courseCode);
-                courseTitle.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-                courseTitle.setTextFill(Color.web("#1a252f"));
-                messageList.getChildren().add(courseTitle);
-                for (Message msg : courseMessages) {
-                    Label msgLabel = new Label(msg.sender + ": " + msg.content);
-                    msgLabel.setFont(Font.font("Arial", 12));
-                    msgLabel.setTextFill(Color.web("#666666"));
-                    msgLabel.setWrapText(true);
-                    messageList.getChildren().add(msgLabel);
+        // Discussion Forum
+        VBox forumBox = new VBox(10);
+        Label forumLbl = new Label("Discussion Forum");
+        forumLbl.setFont(Font.font("Arial", FontWeight.BOLD, 16));
+        VBox forumList = new VBox(5);
+        boolean hasMsg = false;
+        for (String code : userCourses) {
+            List<Message> msgs = getMessagesForCourse(code);
+            if (!msgs.isEmpty()) {
+                hasMsg = true;
+                Label courseLbl = new Label(getCourseName(code));
+                courseLbl.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+                courseLbl.setTextFill(Color.web("#1a252f"));
+                forumList.getChildren().add(courseLbl);
+                for (Message m : msgs) {
+                    Label lblMsg = new Label(m.sender + ": " + m.content);
+                    lblMsg.setWrapText(true);
+                    lblMsg.setFont(Font.font("Arial", 12));
+                    lblMsg.setTextFill(Color.web("#666666"));
+                    forumList.getChildren().add(lblMsg);
                 }
             }
-            Button postMessageButton = new Button("Post Message");
-            postMessageButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 12; -fx-padding: 5 10;");
-            final String finalCourseCode = courseCode;
-            postMessageButton.setOnAction(e -> showPostMessageDialog(finalCourseCode));
-            messageList.getChildren().add(postMessageButton);
         }
-        if (!hasMessages && !userCourses.isEmpty()) {
-            Label noMessages = new Label("No messages yet.");
-            noMessages.setFont(Font.font("Arial", 14));
-            noMessages.setTextFill(Color.web("#666666"));
-            messageList.getChildren().add(noMessages);
+        Button btnPostMsg = new Button("Post Message");
+        btnPostMsg.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnPostMsg.setOnAction(e -> showPostMessageDialog(null));
+        forumList.getChildren().add(btnPostMsg);
+        if (!hasMsg && !userCourses.isEmpty()) {
+            forumList.getChildren().add(new Label("No messages."));
         }
-        ScrollPane messageScroll = new ScrollPane(messageList);
-        messageScroll.setFitToWidth(true);
-        messageScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-        messagesBox.getChildren().addAll(messagesLabel, messageScroll);
+        ScrollPane forumScroll = new ScrollPane(forumList);
+        forumScroll.setFitToWidth(true);
+        forumBox.getChildren().addAll(forumLbl, forumScroll);
+        mainBox.getChildren().add(forumBox);
 
-        VBox mainContent = new VBox(10, header, summaryGrid, announcementsBox, contentBox, assessmentsBox, messagesBox);
-        mainContent.setStyle("-fx-background-color: #ffffff;");
-
+        ScrollPane mainScroll = new ScrollPane(mainBox);
+        mainScroll.setFitToWidth(true);
         BorderPane root = new BorderPane();
-        root.setTop(menuBar);
-        root.setLeft(sidebar);
-        root.setCenter(mainContent);
-        BorderPane.setMargin(mainContent, new Insets(0, 20, 20, 20));
-
+        root.setTop(createMenuBar());
+        root.setLeft(createSidebar("Dashboard", false));
+        root.setCenter(mainScroll);
         return root;
     }
 
     private BorderPane createProfileRoot() {
         MenuBar menuBar = createMenuBar();
         VBox sidebar = createSidebar("Profile", false);
+        VBox mainBox = new VBox(10);
+        mainBox.setPadding(new Insets(20));
+        Label lbl = new Label("Your Profile");
+        lbl.setFont(Font.font("Arial", FontWeight.BOLD, 24));
+        lbl.setTextFill(Color.web("#1a252f"));
+        User currentUser = getCurrentUser();
+        Label userIdLbl = new Label("User ID: " + currentUser.userId);
+        Label usernameLbl = new Label("Username: " + currentUser.username);
+        Label fullNameLbl = new Label("Full Name: " + currentUser.fullName);
+        Label roleLbl = new Label("Role: " + currentUser.role);
+        Label facultyLbl = new Label("Faculty: " + (currentUser.faculty != null ? currentUser.faculty : "N/A"));
+        mainBox.getChildren().addAll(lbl, userIdLbl, usernameLbl, fullNameLbl, roleLbl, facultyLbl);
 
-        VBox header = new VBox(10);
-        header.setStyle("-fx-background-color: #1a252f; -fx-padding: 20;");
-        Label welcomeLabel = new Label("Your Profile");
-        welcomeLabel.setFont(Font.font("Arial", FontWeight.BOLD, 24));
-        welcomeLabel.setTextFill(Color.WHITE);
-        Label subtitle = new Label("Manage your account and enrolled courses");
-        subtitle.setFont(Font.font("Arial", 14));
-        subtitle.setTextFill(Color.web("#cccccc"));
-        header.getChildren().addAll(welcomeLabel, subtitle);
-        header.setAlignment(Pos.CENTER_LEFT);
-
-        VBox profileDetails = new VBox(10);
-        profileDetails.setPadding(new Insets(20));
-        profileDetails.setStyle("-fx-background-color: #f4f6f8; -fx-border-color: #e0e0e0; -fx-border-width: 1;");
-        Label userIdLabel = new Label("User ID: " + (loggedInUser != null ? users.get(loggedInUser).userId : "N/A"));
-        userIdLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-        userIdLabel.setTextFill(Color.web("#1a252f"));
-        Label usernameLabel = new Label("Username: " + (loggedInUser != null ? loggedInUser : "N/A"));
-        usernameLabel.setFont(Font.font("Arial", 14));
-        usernameLabel.setTextFill(Color.web("#1a252f"));
-        Label fullNameLabel = new Label("Full Name: " + (loggedInUser != null ? users.get(loggedInUser).fullName : "N/A"));
-        fullNameLabel.setFont(Font.font("Arial", 14));
-        fullNameLabel.setTextFill(Color.web("#1a252f"));
-        Label roleLabel = new Label("Role: " + (loggedInUser != null ? users.get(loggedInUser).role : "N/A"));
-        roleLabel.setFont(Font.font("Arial", 14));
-        roleLabel.setTextFill(Color.web("#1a252f"));
-        Label facultyLabel = new Label("Faculty: " + (loggedInUser != null && users.get(loggedInUser).faculty != null ? users.get(loggedInUser).faculty : "N/A"));
-        facultyLabel.setFont(Font.font("Arial", 14));
-        facultyLabel.setTextFill(Color.web("#1a252f"));
-        profileDetails.getChildren().addAll(userIdLabel, usernameLabel, fullNameLabel, roleLabel, facultyLabel);
-
-        VBox enrolledCoursesBox = new VBox(10);
-        enrolledCoursesBox.setPadding(new Insets(20));
-        Label enrolledLabel = new Label("Enrolled Courses");
-        enrolledLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-        enrolledLabel.setTextFill(Color.web("#1a252f"));
-        GridPane enrolledGrid = new GridPane();
-        enrolledGrid.setHgap(20);
-        enrolledGrid.setVgap(20);
-        List<String> userCourses = enrolledCourses.getOrDefault(loggedInUser, new ArrayList<>());
+        // Enrolled courses
+        VBox enrolledBox = new VBox(10);
+        enrolledBox.setPadding(new Insets(10));
+        Label enrolledLbl = new Label("Enrolled Courses");
+        enrolledLbl.setFont(Font.font("Arial", FontWeight.BOLD, 16));
+        GridPane grid = new GridPane();
+        grid.setHgap(10); grid.setVgap(10);
+        List<String> userCourses = getEnrolledCourses(loggedInUser);
         if (userCourses.isEmpty()) {
-            Label noCoursesLabel = new Label("No enrolled courses yet.");
-            noCoursesLabel.setFont(Font.font("Arial", 14));
-            noCoursesLabel.setTextFill(Color.web("#666666"));
-            enrolledGrid.add(noCoursesLabel, 0, 0);
+            grid.add(new Label("No enrolled courses."),0,0);
         } else {
-            int col = 0;
-            int row = 0;
-            for (String courseCode : userCourses) {
-                Course course = allCourses.stream().filter(c -> c.code.equals(courseCode)).findFirst().orElse(null);
-                if (course != null) {
-                    VBox courseCard = new VBox(10);
-                    courseCard.setStyle("-fx-background-color: #ffffff; -fx-border-color: #e0e0e0; -fx-border-width: 1; -fx-padding: 15; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 10, 0, 0, 2);");
-                    courseCard.setPrefWidth(250);
-                    Label title = new Label(course.name + " (" + course.code + ")");
-                    title.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-                    title.setTextFill(Color.web("#1a252f"));
-                    title.setWrapText(true);
-                    Button unenrollButton = new Button("Unenroll");
-                    unenrollButton.setStyle("-fx-background-color: #ff6f61; -fx-text-fill: white; -fx-font-size: 12; -fx-padding: 5 10;");
-                    final String finalCourseCode = courseCode;
-                    unenrollButton.setOnAction(e -> {
-                        enrolledCourses.get(loggedInUser).remove(finalCourseCode);
-                        Alert alert = new Alert(Alert.AlertType.INFORMATION, "Unenrolled from " + course.name);
-                        alert.setHeaderText(null);
-                        alert.showAndWait();
+            int col=0, row=0;
+            for (String ccode : userCourses) {
+                Course c = getCourseByCode(ccode);
+                if (c != null) {
+                    VBox card = new VBox(5);
+                    card.setStyle("-fx-background-color:#fff; -fx-border-color:#e0e0e0; -fx-padding:10;");
+                    Label lblCourse = new Label(c.name + "\n(" + c.code + ")");
+                    Button btnUnenroll = new Button("Unenroll");
+                    btnUnenroll.setStyle("-fx-background-color:#ff6f61; -fx-text-fill:#fff;");
+                    final String cc = c.code;
+                    btnUnenroll.setOnAction(e -> {
+                        unenrollCourse(loggedInUser, cc);
                         refreshScenes();
-                        primaryStage.setScene(profileScene);
                     });
-                    courseCard.getChildren().addAll(title, unenrollButton);
-                    enrolledGrid.add(courseCard, col, row);
+                    card.getChildren().addAll(lblCourse, btnUnenroll);
+                    grid.add(card, col, row);
                     col++;
-                    if (col > 2) {
-                        col = 0;
-                        row++;
-                    }
+                    if (col > 2) { col=0; row++; }
                 }
             }
         }
-        enrolledCoursesBox.getChildren().addAll(enrolledLabel, enrolledGrid);
-
-        ScrollPane enrolledScrollPane = new ScrollPane(enrolledCoursesBox);
-        enrolledScrollPane.setFitToWidth(true);
-        enrolledScrollPane.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-        enrolledScrollPane.setPrefHeight(400);
-
-        VBox mainContent = new VBox(10, header, profileDetails, enrolledCoursesBox);
-        mainContent.setStyle("-fx-background-color: #ffffff;");
-
+        enrolledBox.getChildren().addAll(enrolledLbl, grid);
+        ScrollPane enrollScroll = new ScrollPane(enrolledBox);
+        enrollScroll.setFitToWidth(true);
+        mainBox.getChildren().add(enrollScroll);
+        ScrollPane sp = new ScrollPane(mainBox);
+        sp.setFitToWidth(true);
         BorderPane root = new BorderPane();
         root.setTop(menuBar);
         root.setLeft(sidebar);
-        root.setCenter(mainContent);
-        BorderPane.setMargin(mainContent, new Insets(0, 20, 20, 20));
-
+        root.setCenter(sp);
         return root;
     }
 
     private BorderPane createLecturerDashboardRoot() {
         MenuBar menuBar = createMenuBar();
         VBox sidebar = createSidebar("Lecturer Dashboard", false);
-
-        VBox header = new VBox(10);
-        header.setStyle("-fx-background-color: #1a252f; -fx-padding: 20;");
-        Label welcomeLabel = new Label("Lecturer Dashboard");
-        welcomeLabel.setFont(Font.font("Arial", FontWeight.BOLD, 24));
-        welcomeLabel.setTextFill(Color.WHITE);
-        Label subtitle = new Label("Manage courses, content, assessments, and reports");
-        subtitle.setFont(Font.font("Arial", 14));
-        subtitle.setTextFill(Color.web("#cccccc"));
-        header.getChildren().addAll(welcomeLabel, subtitle);
-        header.setAlignment(Pos.CENTER_LEFT);
-
-        TabPane tabPane = new TabPane();
-        tabPane.setStyle("-fx-background-color: #f4f6f8; -fx-border-color: #e0e0e0; -fx-border-width: 1;");
-
-        // Courses Tab
-        Tab coursesTab = new Tab("Courses");
-        coursesTab.setClosable(false);
-        VBox courseManagementBox = new VBox(10);
-        courseManagementBox.setPadding(new Insets(20));
-        Label courseLabel = new Label("Course Management");
-        courseLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-        courseLabel.setTextFill(Color.web("#1a252f"));
-        Button createCourseButton = new Button("Create New Course");
-        createCourseButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        createCourseButton.setOnAction(e -> showCreateCourseDialog());
-        GridPane courseGrid = new GridPane();
-        courseGrid.setHgap(20);
-        courseGrid.setVgap(20);
-        int col = 0;
-        int row = 0;
-
-        if (loggedInUser != null && users.get(loggedInUser) != null && users.get(loggedInUser).faculty != null) {
-            String lecturerFaculty = users.get(loggedInUser).faculty;
-            for (Course course : allCourses.stream().filter(c -> c.faculty != null && c.faculty.equals(lecturerFaculty)).collect(Collectors.toList())) {
-                VBox courseCard = new VBox(10);
-                courseCard.setStyle("-fx-background-color: #ffffff; -fx-border-color: #e0e0e0; -fx-border-width: 1; -fx-padding: 15; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 10, 0, 0, 2);");
-                courseCard.setPrefWidth(250);
-                Label title = new Label(course.name + " (" + course.code + ")");
-                title.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-                title.setTextFill(Color.web("#1a252f"));
-                title.setWrapText(true);
-                Button editButton = new Button("Edit");
-                editButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 12; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-                final Course finalCourse = course;
-                editButton.setOnAction(e -> showEditCourseDialog(finalCourse));
-                Button deleteButton = new Button("Delete");
-                deleteButton.setStyle("-fx-background-color: #ff6f61; -fx-text-fill: white; -fx-font-size: 12; -fx-padding: 5 10;");
-                deleteButton.setOnAction(e -> {
-                    Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, "Are you sure you want to delete " + finalCourse.name + "?");
-                    confirm.setHeaderText(null);
-                    Optional<ButtonType> result = confirm.showAndWait();
-                    if (result.isPresent() && result.get() == ButtonType.OK) {
-                        allCourses.remove(finalCourse);
-                        announcements.remove(finalCourse.code);
-                        courseContent.remove(finalCourse.code);
-                        messages.remove(finalCourse.code);
-                        assessments.remove(finalCourse.code);
-                        submissions.remove(finalCourse.code);
-                        for (List<String> userCourses : enrolledCourses.values()) {
-                            userCourses.remove(finalCourse.code);
-                        }
-                        notifications.add(new Notification(UUID.randomUUID().toString(), "Course '" + finalCourse.name + "' deleted by " + loggedInUser));
-                        refreshScenes();
-                        primaryStage.setScene(lecturerDashboardScene);
-                    }
-                });
-                courseCard.getChildren().addAll(title, editButton, deleteButton);
-                courseGrid.add(courseCard, col, row);
-                col++;
-                if (col > 2) {
-                    col = 0;
-                    row++;
-                }
-            }
+        VBox mainBox = new VBox(10);
+        mainBox.setPadding(new Insets(20));
+        Label lbl = new Label("Lecturer Dashboard");
+        lbl.setFont(Font.font("Arial", FontWeight.BOLD, 24));
+        lbl.setTextFill(Color.web("#1a252f"));
+        mainBox.getChildren().add(lbl);
+        // Manage Courses
+        Label lblManage = new Label("Manage Courses");
+        lblManage.setFont(Font.font("Arial", FontWeight.BOLD, 16));
+        GridPane grid = new GridPane();
+        grid.setHgap(20); grid.setVgap(20);
+        List<Course> facultyCourses = getCoursesByFaculty(getCurrentUser().faculty);
+        int col=0, row=0;
+        for (Course c : facultyCourses) {
+            VBox card = new VBox(5);
+            card.setStyle("-fx-background-color:#fff; -fx-border-color:#e0e0e0; -fx-padding:10;");
+            Label lblCourse = new Label(c.name + "\n(" + c.code + ")");
+            Button btnEdit = new Button("Edit");
+            btnEdit.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+            final Course cc = c;
+            btnEdit.setOnAction(e -> showEditCourseDialog(cc));
+            Button btnDelete = new Button("Delete");
+            btnDelete.setStyle("-fx-background-color:#ff6f61; -fx-text-fill:#fff;");
+            btnDelete.setOnAction(e -> {
+                deleteCourse(cc);
+                refreshScenes();
+            });
+            card.getChildren().addAll(lblCourse, btnEdit, btnDelete);
+            grid.add(card, 0, row);
+            row++;
         }
-        courseManagementBox.getChildren().addAll(courseLabel, createCourseButton, courseGrid);
-        ScrollPane courseScroll = new ScrollPane(courseManagementBox);
-        courseScroll.setFitToWidth(true);
-        courseScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-        coursesTab.setContent(courseScroll);
-
-        // Announcements Tab
-        Tab announcementsTab = new Tab("Announcements");
-        announcementsTab.setClosable(false);
-        VBox announcementsBox = new VBox(10);
-        announcementsBox.setPadding(new Insets(20));
-        Label announcementsLabel = new Label("Announcements");
-        announcementsLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-        announcementsLabel.setTextFill(Color.web("#1a252f"));
-        Button postAnnouncementButton = new Button("Post Announcement");
-        postAnnouncementButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        postAnnouncementButton.setOnAction(e -> showPostAnnouncementDialog());
-        VBox announcementList = new VBox(5);
-        if (loggedInUser != null && users.get(loggedInUser) != null && users.get(loggedInUser).faculty != null) {
-            String lecturerFaculty = users.get(loggedInUser).faculty;
-            for (Course course : allCourses.stream().filter(c -> c.faculty != null && c.faculty.equals(lecturerFaculty)).collect(Collectors.toList())) {
-                List<Announcement> courseAnnouncements = announcements.getOrDefault(course.code, new ArrayList<>());
-                if (!courseAnnouncements.isEmpty()) {
-                    Label courseTitle = new Label(course.name + " (" + course.code + ")");
-                    courseTitle.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-                    courseTitle.setTextFill(Color.web("#1a252f"));
-                    announcementList.getChildren().add(courseTitle);
-                    for (Announcement ann : courseAnnouncements) {
-                        VBox annItem = new VBox(5);
-                        Label annLabel = new Label("• " + ann.content);
-                        annLabel.setFont(Font.font("Arial", 12));
-                        annLabel.setTextFill(Color.web("#666666"));
-                        annLabel.setWrapText(true);
-                        Button editAnnButton = new Button("Edit");
-                        editAnnButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 12; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-                        final Announcement finalAnn = ann;
-                        editAnnButton.setOnAction(e -> showEditAnnouncementDialog(finalAnn));
-                        Button deleteAnnButton = new Button("Delete");
-                        deleteAnnButton.setStyle("-fx-background-color: #ff6f61; -fx-text-fill: white; -fx-font-size: 12; -fx-padding: 5 10;");
-                        deleteAnnButton.setOnAction(e -> {
-                            announcements.get(finalAnn.courseCode).remove(finalAnn);
-                            if (announcements.get(finalAnn.courseCode).isEmpty()) {
-                                announcements.remove(finalAnn.courseCode);
-                            }
-                            notifications.add(new Notification(UUID.randomUUID().toString(), "Announcement deleted for '" + course.name + "' by " + loggedInUser));
-                            refreshScenes();
-                            primaryStage.setScene(lecturerDashboardScene);
-                        });
-                        annItem.getChildren().addAll(annLabel, editAnnButton, deleteAnnButton);
-                        announcementList.getChildren().add(annItem);
-                    }
-                }
-            }
-        }
-        ScrollPane announcementScroll = new ScrollPane(announcementList);
-        announcementScroll.setFitToWidth(true);
-        announcementScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-        announcementsBox.getChildren().addAll(announcementsLabel, postAnnouncementButton, announcementScroll);
-        announcementsTab.setContent(announcementsBox);
-
-        // Content Tab
-        Tab contentTab = new Tab("Content");
-        contentTab.setClosable(false);
-        VBox contentBox = new VBox(10);
-        contentBox.setPadding(new Insets(20));
-        Label contentLabel = new Label("Content Management");
-        contentLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-        contentLabel.setTextFill(Color.web("#1a252f"));
-        Button uploadContentButton = new Button("Upload Content");
-        uploadContentButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        uploadContentButton.setOnAction(e -> showUploadContentDialog());
-        VBox contentList = new VBox(5);
-        if (loggedInUser != null && users.get(loggedInUser) != null && users.get(loggedInUser).faculty != null) {
-            String lecturerFaculty = users.get(loggedInUser).faculty;
-            for (Course course : allCourses.stream().filter(c -> c.faculty != null && c.faculty.equals(lecturerFaculty)).collect(Collectors.toList())) {
-                List<Content> courseContents = courseContent.getOrDefault(course.code, new ArrayList<>());
-                if (!courseContents.isEmpty()) {
-                    Label courseTitle = new Label(course.name + " (" + course.code + ")");
-                    courseTitle.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-                    courseTitle.setTextFill(Color.web("#1a252f"));
-                    contentList.getChildren().add(courseTitle);
-                    for (Content content : courseContents) {
-                        VBox contentItem = new VBox(5);
-                        Label contentLabelItem = new Label("• " + content.title + " (" + content.type + ")");
-                        contentLabelItem.setFont(Font.font("Arial", 12));
-                        contentLabelItem.setTextFill(Color.web("#666666"));
-                        Button deleteContentButton = new Button("Delete");
-                        deleteContentButton.setStyle("-fx-background-color: #ff6f61; -fx-text-fill: white; -fx-font-size: 12; -fx-padding: 5 10;");
-                        final Content finalContent = content;
-                        deleteContentButton.setOnAction(e -> {
-                            courseContent.get(course.code).remove(finalContent);
-                            if (courseContent.get(course.code).isEmpty()) {
-                                courseContent.remove(course.code);
-                            }
-                            notifications.add(new Notification(UUID.randomUUID().toString(), "Content '" + finalContent.title + "' deleted for '" + course.name + "' by " + loggedInUser));
-                            refreshScenes();
-                            primaryStage.setScene(lecturerDashboardScene);
-                        });
-                        contentItem.getChildren().addAll(contentLabelItem, deleteContentButton);
-                        contentList.getChildren().add(contentItem);
-                    }
-                }
-            }
-        }
-        ScrollPane contentScroll = new ScrollPane(contentList);
-        contentScroll.setFitToWidth(true);
-        contentScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-        contentBox.getChildren().addAll(contentLabel, uploadContentButton, contentScroll);
-        contentTab.setContent(contentBox);
-
-        // Assessments Tab
-        Tab assessmentsTab = new Tab("Assessments");
-        assessmentsTab.setClosable(false);
-        VBox assessmentsBox = new VBox(10);
-        assessmentsBox.setPadding(new Insets(20));
-        Label assessmentsLabel = new Label("Assessment Management");
-        assessmentsLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-        assessmentsLabel.setTextFill(Color.web("#1a252f"));
-        Button createAssessmentButton = new Button("Create Assessment");
-        createAssessmentButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        createAssessmentButton.setOnAction(e -> showCreateAssessmentDialog());
-        VBox assessmentList = new VBox(5);
-        if (loggedInUser != null && users.get(loggedInUser) != null && users.get(loggedInUser).faculty != null) {
-            String lecturerFaculty = users.get(loggedInUser).faculty;
-            for (Course course : allCourses.stream().filter(c -> c.faculty != null && c.faculty.equals(lecturerFaculty)).collect(Collectors.toList())) {
-                List<Assessment> courseAssessments = assessments.getOrDefault(course.code, new ArrayList<>());
-                if (!courseAssessments.isEmpty()) {
-                    Label courseTitle = new Label(course.name + " (" + course.code + ")");
-                    courseTitle.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-                    courseTitle.setTextFill(Color.web("#1a252f"));
-                    assessmentList.getChildren().add(courseTitle);
-                    for (Assessment assessment : courseAssessments) {
-                        VBox assessmentItem = new VBox(5);
-                        Label titleLabel = new Label(assessment.title + " (" + assessment.type + ", Weight: " + (assessment.weight * 100) + "%)");
-                        titleLabel.setFont(Font.font("Arial", 12));
-                        titleLabel.setTextFill(Color.web("#666666"));
-                        Button editButton = new Button("Edit");
-                        editButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 12; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-                        final Assessment finalAssessment = assessment;
-                        editButton.setOnAction(e -> showEditAssessmentDialog(finalAssessment));
-                        Button deleteButton = new Button("Delete");
-                        deleteButton.setStyle("-fx-background-color: #ff6f61; -fx-text-fill: white; -fx-font-size: 12; -fx-padding: 5 10;");
-                        deleteButton.setOnAction(e -> {
-                            assessments.get(finalAssessment.courseCode).remove(finalAssessment);
-                            if (assessments.get(finalAssessment.courseCode).isEmpty()) {
-                                assessments.remove(finalAssessment.courseCode);
-                            }
-                            submissions.getOrDefault(finalAssessment.courseCode, new HashMap<>()).values().forEach(subList ->
-                                    subList.removeIf(sub -> sub.assessmentId.equals(finalAssessment.id)));
-                            notifications.add(new Notification(UUID.randomUUID().toString(), "Assessment '" + finalAssessment.title + "' deleted for '" + course.name + "' by " + loggedInUser));
-                            refreshScenes();
-                            primaryStage.setScene(lecturerDashboardScene);
-                        });
-                        Button gradeButton = new Button("Grade");
-                        gradeButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 12; -fx-padding: 5 10;");
-                        gradeButton.setOnAction(e -> showGradeAssessmentDialog(finalAssessment));
-                        assessmentItem.getChildren().addAll(titleLabel, editButton, deleteButton, gradeButton);
-                        assessmentList.getChildren().add(assessmentItem);
-                    }
-                }
-            }
-        }
-        ScrollPane assessmentScroll = new ScrollPane(assessmentList);
-        assessmentScroll.setFitToWidth(true);
-        assessmentScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-        assessmentsBox.getChildren().addAll(assessmentsLabel, createAssessmentButton, assessmentScroll);
-        assessmentsTab.setContent(assessmentsBox);
-
-        // Reports Tab
-        Tab reportsTab = new Tab("Reports");
-        reportsTab.setClosable(false);
-        VBox reportsBox = new VBox(10);
-        reportsBox.setPadding(new Insets(20));
-        Label reportsLabel = new Label("Reports and Certifications");
-        reportsLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-        reportsLabel.setTextFill(Color.web("#1a252f"));
-        Button classPerformanceButton = new Button("Class Performance Report");
-        classPerformanceButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        classPerformanceButton.setOnAction(e -> showClassPerformanceReport());
-        Button transcriptButton = new Button("Student Transcripts");
-        transcriptButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        transcriptButton.setOnAction(e -> showTranscriptReport());
-        Button certificationButton = new Button("Issue Certifications");
-        certificationButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        certificationButton.setOnAction(e -> showCertificationDialog());
-        reportsBox.getChildren().addAll(reportsLabel, classPerformanceButton, transcriptButton, certificationButton);
-        reportsTab.setContent(reportsBox);
-
-        // Messages Tab
-        Tab messagesTab = new Tab("Messages");
-        messagesTab.setClosable(false);
-        VBox messagesBox = new VBox(10);
-        messagesBox.setPadding(new Insets(20));
-        Label messagesLabel = new Label("Discussion Forum");
-        messagesLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
-        messagesLabel.setTextFill(Color.web("#1a252f"));
-        VBox messageList = new VBox(5);
-        if (loggedInUser != null && users.get(loggedInUser) != null && users.get(loggedInUser).faculty != null) {
-            String lecturerFaculty = users.get(loggedInUser).faculty;
-            for (Course course : allCourses.stream().filter(c -> c.faculty != null && c.faculty.equals(lecturerFaculty)).collect(Collectors.toList())) {
-                List<Message> courseMessages = messages.getOrDefault(course.code, new ArrayList<>());
-                if (!courseMessages.isEmpty()) {
-                    Label courseTitle = new Label(course.name + " (" + course.code + ")");
-                    courseTitle.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-                    courseTitle.setTextFill(Color.web("#1a252f"));
-                    messageList.getChildren().add(courseTitle);
-                    for (Message msg : courseMessages) {
-                        Label msgLabel = new Label(msg.sender + ": " + msg.content);
-                        msgLabel.setFont(Font.font("Arial", 12));
-                        msgLabel.setTextFill(Color.web("#666666"));
-                        msgLabel.setWrapText(true);
-                        messageList.getChildren().add(msgLabel);
-                    }
-                }
-                Button postMessageButton = new Button("Post Message");
-                postMessageButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 12; -fx-padding: 5 10;");
-                final String finalCourseCode = course.code;
-                postMessageButton.setOnAction(e -> showPostMessageDialog(finalCourseCode));
-                messageList.getChildren().add(postMessageButton);
-            }
-        }
-        ScrollPane messageScroll = new ScrollPane(messageList);
-        messageScroll.setFitToWidth(true);
-        messageScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-        messagesBox.getChildren().addAll(messagesLabel, messageScroll);
-        messagesTab.setContent(messagesBox);
-
-        tabPane.getTabs().addAll(coursesTab, announcementsTab, contentTab, assessmentsTab, messagesTab, reportsTab);
-
-        VBox mainContent = new VBox(10, header, tabPane);
-        mainContent.setStyle("-fx-background-color: #ffffff;");
-
+        mainBox.getChildren().addAll(lblManage, grid);
+        ScrollPane sp = new ScrollPane(mainBox);
+        sp.setFitToWidth(true);
         BorderPane root = new BorderPane();
         root.setTop(menuBar);
         root.setLeft(sidebar);
-        root.setCenter(mainContent);
-        BorderPane.setMargin(mainContent, new Insets(0, 20, 20, 20));
-
+        root.setCenter(sp);
         return root;
     }
 
-    private void showCreateCourseDialog() {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Create New Course");
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-        form.setAlignment(Pos.CENTER);
-
-        Label title = new Label("Create New Course");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        TextField courseNameField = new TextField();
-        courseNameField.setPromptText("Course Name");
-        courseNameField.setStyle("-fx-font-size: 14;");
-
-        TextField courseCodeField = new TextField();
-        courseCodeField.setPromptText("Course Code (e.g., ARC101)");
-        courseCodeField.setStyle("-fx-font-size: 14;");
-
-        Button createButton = new Button("Create");
-        createButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        Button cancelButton = new Button("Cancel");
-        cancelButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        HBox buttonBox = new HBox(10, createButton, cancelButton);
-        buttonBox.setAlignment(Pos.CENTER);
-
-        createButton.setOnAction(e -> {
-            String courseName = courseNameField.getText().trim();
-            String courseCode = courseCodeField.getText().trim().toUpperCase();
-            String faculty = users.get(loggedInUser).faculty;
-            if (courseName.isEmpty() || courseCode.isEmpty()) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Course name and code are required");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else if (allCourses.stream().anyMatch(c -> c.code.equals(courseCode))) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Course code already exists");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else if (allCourses.stream().anyMatch(c -> c.name.equals(courseName) && c.faculty.equals(faculty))) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Course name already exists in this faculty");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else {
-                allCourses.add(new Course(courseName, courseCode, faculty));
-                notifications.add(new Notification(UUID.randomUUID().toString(), "New course '" + courseName + "' (" + courseCode + ") created by " + loggedInUser));
-                Alert alert = new Alert(Alert.AlertType.INFORMATION, "Course created successfully!");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                dialog.close();
-                refreshScenes();
-                primaryStage.setScene(lecturerDashboardScene);
-            }
+    private MenuBar createMenuBar() {
+        MenuBar mb = new MenuBar();
+        Menu home = new Menu("Home");
+        MenuItem homeItem = new MenuItem("Go to Home");
+        homeItem.setOnAction(e -> primaryStage.setScene(homeScene));
+        home.getItems().add(homeItem);
+        Menu courses = new Menu("Courses");
+        MenuItem viewCourses = new MenuItem("View Courses");
+        viewCourses.setOnAction(e -> primaryStage.setScene(createCourseRoot()));
+        courses.getItems().add(viewCourses);
+        Menu account = new Menu("Account");
+        MenuItem signIn = new MenuItem("Sign In");
+        signIn.setOnAction(e -> showSignInDialog());
+        MenuItem signUp = new MenuItem("Sign Up");
+        signUp.setOnAction(e -> showSignUpDialog());
+        MenuItem dashboard = new MenuItem("Dashboard");
+        dashboard.setOnAction(e -> {
+            if (loggedInUser != null) {
+                if (getCurrentUser().role.equals("Lecturer"))
+                    primaryStage.setScene(lecturerDashboardScene);
+                else
+                    primaryStage.setScene(dashboardScene);
+            } else showAlert("Sign in first");
         });
-
-        cancelButton.setOnAction(e -> dialog.close());
-
-        form.getChildren().addAll(title, courseNameField, courseCodeField, buttonBox);
-
-        Scene dialogScene = new Scene(form, 400, 300);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
+        MenuItem profile = new MenuItem("Profile");
+        profile.setOnAction(e -> {
+            if (loggedInUser != null) primaryStage.setScene(profileScene);
+            else showAlert("Sign in first");
+        });
+        MenuItem signOut = new MenuItem("Sign Out");
+        signOut.setOnAction(e -> {
+            loggedInUser = null;
+            primaryStage.setScene(homeScene);
+        });
+        account.getItems().addAll(signIn, signUp, new SeparatorMenuItem(), dashboard, profile, signOut);
+        mb.getMenus().addAll(home, courses, account);
+        return mb;
     }
 
-    private void showEditCourseDialog(Course course) {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Edit Course");
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-        form.setAlignment(Pos.CENTER);
-
-        Label title = new Label("Edit Course");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        TextField courseNameField = new TextField(course.name);
-        courseNameField.setPromptText("Course Name");
-        courseNameField.setStyle("-fx-font-size: 14;");
-
-        TextField courseCodeField = new TextField(course.code);
-        courseCodeField.setPromptText("Course Code");
-        courseCodeField.setStyle("-fx-font-size: 14;");
-
-        Button saveButton = new Button("Save");
-        saveButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        Button cancelButton = new Button("Cancel");
-        cancelButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        HBox buttonBox = new HBox(10, saveButton, cancelButton);
-        buttonBox.setAlignment(Pos.CENTER);
-
-        saveButton.setOnAction(e -> {
-            String newCourseName = courseNameField.getText().trim();
-            String newCourseCode = courseCodeField.getText().trim().toUpperCase();
-            String faculty = users.get(loggedInUser).faculty;
-            if (newCourseName.isEmpty() || newCourseCode.isEmpty()) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Course name and code are required");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else if (!newCourseCode.equals(course.code) && allCourses.stream().anyMatch(c -> c.code.equals(newCourseCode))) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Course code already exists");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else if (!newCourseName.equals(course.name) && allCourses.stream().anyMatch(c -> c.name.equals(newCourseName) && c.faculty.equals(faculty))) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Course name already exists in this faculty");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else {
-                course.name = newCourseName;
-                String oldCourseCode = course.code;
-                course.code = newCourseCode;
-                for (List<String> userCourses : enrolledCourses.values()) {
-                    if (userCourses.contains(oldCourseCode)) {
-                        int index = userCourses.indexOf(oldCourseCode);
-                        userCourses.set(index, newCourseCode);
-                    }
-                }
-                updateCourseCodeInCollections(oldCourseCode, newCourseCode);
-                notifications.add(new Notification(UUID.randomUUID().toString(), "Course '" + oldCourseCode + "' updated to '" + newCourseName + "' (" + newCourseCode + ") by " + loggedInUser));
-                Alert alert = new Alert(Alert.AlertType.INFORMATION, "Course updated successfully!");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                dialog.close();
-                refreshScenes();
-                primaryStage.setScene(lecturerDashboardScene);
-            }
+    // --- Dialogs ---
+    private void showSignInDialog() {
+        Stage dlg = new Stage();
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.initOwner(primaryStage);
+        dlg.setTitle("Sign In");
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        TextField tfUser = new TextField(); tfUser.setPromptText("Username");
+        PasswordField pfPass = new PasswordField(); pfPass.setPromptText("Password");
+        Button btnSignIn = new Button("Sign In");
+        btnSignIn.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnSignIn.setOnAction(e -> {
+            String u = tfUser.getText().trim();
+            String p = pfPass.getText().trim();
+            if (u.isEmpty() || p.isEmpty()) { showAlert("Fill all fields"); return; }
+            User user = getUserByUsername(u);
+            if (user == null) { showAlert("User not found"); return; }
+            if (!user.password.equals(p)) { showAlert("Incorrect password"); return; }
+            loggedInUser = u;
+            showAlert("Signed in as " + user.role);
+            dlg.close();
+            refreshScenes();
+            if (user.role.equals("Lecturer")) primaryStage.setScene(lecturerDashboardScene);
+            else primaryStage.setScene(dashboardScene);
         });
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setOnAction(e -> dlg.close());
+        HBox hb = new HBox(10, btnSignIn, btnCancel);
+        hb.setAlignment(Pos.CENTER);
+        box.getChildren().addAll(new Label("Sign In"), tfUser, pfPass, hb);
+        dlg.setScene(new Scene(box, 300, 200));
+        dlg.showAndWait();
+    }
 
-        cancelButton.setOnAction(e -> dialog.close());
+    private void showSignUpDialog() {
+        Stage dlg = new Stage();
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.initOwner(primaryStage);
+        dlg.setTitle("Sign Up");
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        TextField tfUser = new TextField(); tfUser.setPromptText("Username");
+        PasswordField pfPass = new PasswordField(); pfPass.setPromptText("Password");
+        TextField tfFull = new TextField(); tfFull.setPromptText("Full Name");
+        ComboBox<String> cbRole = new ComboBox<>(); cbRole.getItems().addAll("Student","Lecturer");
+        cbRole.setPromptText("Role");
+        ComboBox<String> cbFaculty = new ComboBox<>(); cbFaculty.getItems().addAll("Design","Business","IT","Communication");
+        cbFaculty.setPromptText("Faculty (for Lecturer)");
+        cbRole.valueProperty().addListener((obs,old,newVal) -> {
+            cbFaculty.setDisable(!"Lecturer".equals(newVal));
+        });
+        Button btnSignUp = new Button("Sign Up");
+        btnSignUp.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnSignUp.setOnAction(e -> {
+            String u = tfUser.getText().trim();
+            String p = pfPass.getText().trim();
+            String f = tfFull.getText().trim();
+            String role = cbRole.getValue();
+            String faculty = cbFaculty.getValue();
+            if (u.isEmpty() || p.isEmpty() || f.isEmpty() || role == null) { showAlert("Fill all fields"); return; }
+            if (getUserByUsername(u) != null) { showAlert("Username exists"); return; }
+            String uid = (role.equals("Student") ? "STU-" : "LEC-") + (1000 + new Random().nextInt(9000));
+            saveUser(new User(uid, u, p, f, role, "Lecturer".equals(role)?faculty:null));
+            showAlert("Account created");
+            dlg.close();
+        });
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setOnAction(e -> dlg.close());
+        HBox hb = new HBox(10, btnSignUp, btnCancel);
+        hb.setAlignment(Pos.CENTER);
+        box.getChildren().addAll(new Label("Sign Up"), tfUser, pfPass, tfFull, cbRole, cbFaculty, hb);
+        dlg.setScene(new Scene(box, 350, 350));
+        dlg.showAndWait();
+    }
 
-        form.getChildren().addAll(title, courseNameField, courseCodeField, buttonBox);
+    private void saveUser(User user) {
+        String sql = "INSERT INTO users (user_id, username, password, full_name, role, faculty) VALUES (?, ?, ?, ?, ?, ?)";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, user.userId);
+            ps.setString(2, user.username);
+            ps.setString(3, user.password);
+            ps.setString(4, user.fullName);
+            ps.setString(5, user.role);
+            ps.setString(6, user.faculty);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
 
-        Scene dialogScene = new Scene(form, 400, 300);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
+    private void showAlert(String msg) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION, msg);
+        alert.setHeaderText(null);
+        alert.showAndWait();
+    }
+
+    private User getCurrentUser() {
+        return getUserByUsername(loggedInUser);
+    }
+
+    private void deleteCourse(Course c) {
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+            PreparedStatement ps = conn.prepareStatement("DELETE FROM courses WHERE code=?");
+            ps.setString(1, c.code);
+            ps.executeUpdate();
+        } catch (SQLException e) { e.printStackTrace(); }
+        // delete related data
+        deleteCourseRelatedData(c.code);
+        refreshScenes();
+    }
+
+    private void deleteCourseRelatedData(String code) {
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+            conn.createStatement().executeUpdate("DELETE FROM announcements WHERE course_code='" + code + "'");
+            conn.createStatement().executeUpdate("DELETE FROM contents WHERE course_code='" + code + "'");
+            conn.createStatement().executeUpdate("DELETE FROM assessments WHERE course_code='" + code + "'");
+            conn.createStatement().executeUpdate("DELETE FROM messages WHERE course_code='" + code + "'");
+            conn.createStatement().executeUpdate("DELETE FROM enrollments WHERE course_code='" + code + "'");
+            conn.createStatement().executeUpdate("DELETE FROM submissions WHERE assessment_id IN (SELECT id FROM assessments WHERE course_code='" + code + "')");
+        } catch (SQLException e) { e.printStackTrace(); }
     }
 
     private void updateCourseCodeInCollections(String oldCode, String newCode) {
-        if (announcements.containsKey(oldCode)) {
-            announcements.put(newCode, announcements.remove(oldCode));
-        }
-        if (courseContent.containsKey(oldCode)) {
-            courseContent.put(newCode, courseContent.remove(oldCode));
-        }
-        if (messages.containsKey(oldCode)) {
-            messages.put(newCode, messages.remove(oldCode));
-        }
-        if (assessments.containsKey(oldCode)) {
-            assessments.put(newCode, assessments.remove(oldCode));
-        }
-        if (submissions.containsKey(oldCode)) {
-            submissions.put(newCode, submissions.remove(oldCode));
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+            // Update assessments
+            PreparedStatement psAssessments = conn.prepareStatement("UPDATE assessments SET course_code=? WHERE course_code=?");
+            psAssessments.setString(1, newCode);
+            psAssessments.setString(2, oldCode);
+            psAssessments.executeUpdate();
+
+            // Update contents
+            PreparedStatement psContents = conn.prepareStatement("UPDATE contents SET course_code=? WHERE course_code=?");
+            psContents.setString(1, newCode);
+            psContents.setString(2, oldCode);
+            psContents.executeUpdate();
+
+            // Update messages
+            PreparedStatement psMessages = conn.prepareStatement("UPDATE messages SET course_code=? WHERE course_code=?");
+            psMessages.setString(1, newCode);
+            psMessages.setString(2, oldCode);
+            psMessages.executeUpdate();
+
+            // Update enrollments
+            PreparedStatement psEnrollments = conn.prepareStatement("UPDATE enrollments SET course_code=? WHERE course_code=?");
+            psEnrollments.setString(1, newCode);
+            psEnrollments.setString(2, oldCode);
+            psEnrollments.executeUpdate();
+
+            // Update submissions' assessment_id if necessary
+            // This part might need adjustment depending on your schema
+            // For safety, fetching assessments IDs before and updating submissions accordingly
+        } catch (SQLException e) {
+            e.printStackTrace();
         }
     }
 
-    private void showPostAnnouncementDialog() {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Post Announcement");
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-        form.setAlignment(Pos.CENTER);
-
-        Label title = new Label("Post Announcement");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        ComboBox<String> courseCombo = new ComboBox<>();
-        if (loggedInUser != null && users.get(loggedInUser) != null && users.get(loggedInUser).faculty != null) {
-            courseCombo.getItems().addAll(allCourses.stream()
-                    .filter(c -> c.faculty != null && c.faculty.equals(users.get(loggedInUser).faculty))
-                    .map(c -> c.name + " (" + c.code + ")")
-                    .collect(Collectors.toList()));
-        }
-        courseCombo.setPromptText("Select Course");
-        courseCombo.setStyle("-fx-font-size: 14;");
-
-        TextArea announcementField = new TextArea();
-        announcementField.setPromptText("Enter announcement");
-        announcementField.setStyle("-fx-font-size: 14;");
-        announcementField.setPrefRowCount(4);
-
-        Button postButton = new Button("Post");
-        postButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        Button cancelButton = new Button("Cancel");
-        cancelButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        HBox buttonBox = new HBox(10, postButton, cancelButton);
-        buttonBox.setAlignment(Pos.CENTER);
-
-        postButton.setOnAction(e -> {
-            String courseSelection = courseCombo.getValue();
-            String announcement = announcementField.getText().trim();
-            if (courseSelection == null || announcement.isEmpty()) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Please select a course and enter an announcement");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else {
-                String courseCode = courseSelection.substring(courseSelection.lastIndexOf("(") + 1, courseSelection.length() - 1);
-                List<Announcement> courseAnnouncements = announcements.getOrDefault(courseCode, new ArrayList<>());
-                courseAnnouncements.add(new Announcement(UUID.randomUUID().toString(), courseCode, announcement, loggedInUser));
-                announcements.put(courseCode, courseAnnouncements);
-                notifications.add(new Notification(UUID.randomUUID().toString(), "New announcement posted for '" + courseSelection + "' by " + loggedInUser));
-                Alert alert = new Alert(Alert.AlertType.INFORMATION, "Announcement posted successfully!");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                dialog.close();
-                refreshScenes();
-                primaryStage.setScene(lecturerDashboardScene);
-            }
-        });
-
-        cancelButton.setOnAction(e -> dialog.close());
-
-        form.getChildren().addAll(title, courseCombo, announcementField, buttonBox);
-
-        Scene dialogScene = new Scene(form, 400, 400);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
-    }
-
-    private void showPostMessageDialog(String courseCode) {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Post Message");
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-        form.setAlignment(Pos.CENTER);
-
-        Label title = new Label("Post Message");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        TextArea messageField = new TextArea();
-        messageField.setPromptText("Enter your message");
-        messageField.setStyle("-fx-font-size: 14;");
-        messageField.setPrefRowCount(4);
-
-        Button postButton = new Button("Post");
-        postButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        Button cancelButton = new Button("Cancel");
-        cancelButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        HBox buttonBox = new HBox(10, postButton, cancelButton);
-        buttonBox.setAlignment(Pos.CENTER);
-
-        postButton.setOnAction(e -> {
-            String message = messageField.getText().trim();
-            if (message.isEmpty()) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Message cannot be empty");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else {
-                List<Message> courseMessages = messages.getOrDefault(courseCode, new ArrayList<>());
-                courseMessages.add(new Message(UUID.randomUUID().toString(), courseCode, loggedInUser, message));
-                messages.put(courseCode, courseMessages);
-                notifications.add(new Notification(UUID.randomUUID().toString(), "New message posted in '" + courseCode + "' by " + loggedInUser));
-                Alert alert = new Alert(Alert.AlertType.INFORMATION, "Message posted successfully!");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                dialog.close();
-                refreshScenes();
-                primaryStage.setScene(users.get(loggedInUser).role.equals("Lecturer") ? lecturerDashboardScene : dashboardScene);
-            }
-        });
-
-        cancelButton.setOnAction(e -> dialog.close());
-
-        form.getChildren().addAll(title, messageField, buttonBox);
-
-        Scene dialogScene = new Scene(form, 400, 300);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
-    }
-
-    private void showEditAnnouncementDialog(Announcement announcement) {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Edit Announcement");
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-        form.setAlignment(Pos.CENTER);
-
-        Label title = new Label("Edit Announcement");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        TextArea announcementField = new TextArea(announcement.content);
-        announcementField.setPromptText("Enter announcement");
-        announcementField.setStyle("-fx-font-size: 14;");
-        announcementField.setPrefRowCount(4);
-
-        Button saveButton = new Button("Save");
-        saveButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        Button cancelButton = new Button("Cancel");
-        cancelButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        HBox buttonBox = new HBox(10, saveButton, cancelButton);
-        buttonBox.setAlignment(Pos.CENTER);
-
-        saveButton.setOnAction(e -> {
-            String newContent = announcementField.getText().trim();
-            if (newContent.isEmpty()) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Announcement cannot be empty");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else {
-                announcement.content = newContent;
-                notifications.add(new Notification(UUID.randomUUID().toString(), "Announcement updated for '" + announcement.courseCode + "' by " + loggedInUser));
-                Alert alert = new Alert(Alert.AlertType.INFORMATION, "Announcement updated successfully!");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                dialog.close();
-                refreshScenes();
-                primaryStage.setScene(lecturerDashboardScene);
-            }
-        });
-
-        cancelButton.setOnAction(e -> dialog.close());
-
-        form.getChildren().addAll(title, announcementField, buttonBox);
-
-        Scene dialogScene = new Scene(form, 400, 300);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
-    }
-
-    private void showUploadContentDialog() {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Upload Content");
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-        form.setAlignment(Pos.CENTER);
-
-        Label title = new Label("Upload Content");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        ComboBox<String> courseCombo = new ComboBox<>();
-        if (loggedInUser != null && users.get(loggedInUser) != null && users.get(loggedInUser).faculty != null) {
-            courseCombo.getItems().addAll(allCourses.stream()
-                    .filter(c -> c.faculty != null && c.faculty.equals(users.get(loggedInUser).faculty))
-                    .map(c -> c.name + " (" + c.code + ")")
-                    .collect(Collectors.toList()));
-        }
-        courseCombo.setPromptText("Select Course");
-        courseCombo.setStyle("-fx-font-size: 14;");
-
-        TextField contentTitleField = new TextField();
-        contentTitleField.setPromptText("Content Title");
-        contentTitleField.setStyle("-fx-font-size: 14;");
-
-        ComboBox<String> contentTypeCombo = new ComboBox<>();
-        contentTypeCombo.getItems().addAll("Video", "PDF");
-        contentTypeCombo.setPromptText("Select Content Type");
-        contentTypeCombo.setStyle("-fx-font-size: 14;");
-
-        Button uploadButton = new Button("Upload");
-        uploadButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        Button cancelButton = new Button("Cancel");
-        cancelButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        HBox buttonBox = new HBox(10, uploadButton, cancelButton);
-        buttonBox.setAlignment(Pos.CENTER);
-
-        uploadButton.setOnAction(e -> {
-            String courseSelection = courseCombo.getValue();
-            String contentTitle = contentTitleField.getText().trim();
-            String contentType = contentTypeCombo.getValue();
-            if (courseSelection == null || contentTitle.isEmpty() || contentType == null) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "All fields are required");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else {
-                String courseCode = courseSelection.substring(courseSelection.lastIndexOf("(") + 1, courseSelection.length() - 1);
-                List<Content> courseContents = courseContent.getOrDefault(courseCode, new ArrayList<>());
-                courseContents.add(new Content(UUID.randomUUID().toString(), contentTitle, contentType, "Sample data for " + contentTitle));
-                courseContent.put(courseCode, courseContents);
-                notifications.add(new Notification(UUID.randomUUID().toString(), contentType + " '" + contentTitle + "' uploaded for '" + courseSelection + "' by " + loggedInUser));
-                Alert alert = new Alert(Alert.AlertType.INFORMATION, "Content uploaded successfully!");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                dialog.close();
-                refreshScenes();
-                primaryStage.setScene(lecturerDashboardScene);
-            }
-        });
-
-        cancelButton.setOnAction(e -> dialog.close());
-
-        form.getChildren().addAll(title, courseCombo, contentTitleField, contentTypeCombo, buttonBox);
-
-        Scene dialogScene = new Scene(form, 400, 400);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
-    }
-
-    private void showCreateAssessmentDialog() {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Create Assessment");
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-        form.setAlignment(Pos.CENTER);
-
-        Label title = new Label("Create Assessment");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        ComboBox<String> courseCombo = new ComboBox<>();
-        if (loggedInUser != null && users.get(loggedInUser) != null && users.get(loggedInUser).faculty != null) {
-            courseCombo.getItems().addAll(allCourses.stream()
-                    .filter(c -> c.faculty != null && c.faculty.equals(users.get(loggedInUser).faculty))
-                    .map(c -> c.name + " (" + c.code + ")")
-                    .collect(Collectors.toList()));
-        }
-        courseCombo.setPromptText("Select Course");
-        courseCombo.setStyle("-fx-font-size: 14;");
-
-        TextField assessmentTitleField = new TextField();
-        assessmentTitleField.setPromptText("Assessment Title");
-        assessmentTitleField.setStyle("-fx-font-size: 14;");
-
-        ComboBox<String> assessmentTypeCombo = new ComboBox<>();
-        assessmentTypeCombo.getItems().addAll("Multiple Choice", "Short Answer");
-        assessmentTypeCombo.setPromptText("Select Assessment Type");
-        assessmentTypeCombo.setStyle("-fx-font-size: 14;");
-
-        TextField weightField = new TextField();
-        weightField.setPromptText("Weight (0.0 to 1.0)");
-        weightField.setStyle("-fx-font-size: 14;");
-
-        TextArea questionsField = new TextArea();
-        questionsField.setPromptText("Enter questions (one per line, for MCQ: Question|Opt1|Opt2|Opt3|Opt4|Correct)");
-        questionsField.setStyle("-fx-font-size: 14;");
-        questionsField.setPrefRowCount(5);
-
-        Button createButton = new Button("Create");
-        createButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        Button cancelButton = new Button("Cancel");
-        cancelButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        HBox buttonBox = new HBox(10, createButton, cancelButton);
-        buttonBox.setAlignment(Pos.CENTER);
-
-        createButton.setOnAction(e -> {
-            String courseSelection = courseCombo.getValue();
-            String assessmentTitle = assessmentTitleField.getText().trim();
-            String assessmentType = assessmentTypeCombo.getValue();
-            String weightText = weightField.getText().trim();
-            String questionsText = questionsField.getText().trim();
-
-            if (courseSelection == null || assessmentTitle.isEmpty() || assessmentType == null || weightText.isEmpty() || questionsText.isEmpty()) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "All fields are required");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                return;
-            }
-
-            double weight;
-            try {
-                weight = Double.parseDouble(weightText);
-                if (weight < 0.0 || weight > 1.0) {
-                    Alert alert = new Alert(Alert.AlertType.ERROR, "Weight must be between 0.0 and 1.0");
-                    alert.setHeaderText(null);
-                    alert.showAndWait();
-                    return;
-                }
-            } catch (NumberFormatException ex) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Invalid weight format");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                return;
-            }
-
-            List<String> questions = Arrays.asList(questionsText.split("\n"));
-            if (assessmentType.equals("Multiple Choice")) {
-                for (String q : questions) {
-                    if (q.split("\\|").length != 6) {
-                        Alert alert = new Alert(Alert.AlertType.ERROR, "MCQ format: Question|Opt1|Opt2|Opt3|Opt4|Correct");
-                        alert.setHeaderText(null);
-                        alert.showAndWait();
-                        return;
-                    }
-                }
-            }
-
-            String courseCode = courseSelection.substring(courseSelection.lastIndexOf("(") + 1, courseSelection.length() - 1);
-            List<Assessment> courseAssessments = assessments.getOrDefault(courseCode, new ArrayList<>());
-            courseAssessments.add(new Assessment(UUID.randomUUID().toString(), courseCode, assessmentTitle, assessmentType, weight, questions, loggedInUser));
-            assessments.put(courseCode, courseAssessments);
-            notifications.add(new Notification(UUID.randomUUID().toString(), "Assessment '" + assessmentTitle + "' created for '" + courseSelection + "' by " + loggedInUser));
-            Alert alert = new Alert(Alert.AlertType.INFORMATION, "Assessment created successfully!");
-            alert.setHeaderText(null);
-            alert.showAndWait();
-            dialog.close();
-            refreshScenes();
-            primaryStage.setScene(lecturerDashboardScene);
-        });
-
-        cancelButton.setOnAction(e -> dialog.close());
-
-        form.getChildren().addAll(title, courseCombo, assessmentTitleField, assessmentTypeCombo, weightField, questionsField, buttonBox);
-
-        Scene dialogScene = new Scene(form, 500, 500);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
-    }
-
-    private void showEditAssessmentDialog(Assessment assessment) {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Edit Assessment");
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-        form.setAlignment(Pos.CENTER);
-
-        Label title = new Label("Edit Assessment");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        TextField assessmentTitleField = new TextField(assessment.title);
-        assessmentTitleField.setPromptText("Assessment Title");
-        assessmentTitleField.setStyle("-fx-font-size: 14;");
-
-        TextField weightField = new TextField(String.valueOf(assessment.weight));
-        weightField.setPromptText("Weight (0.0 to 1.0)");
-        weightField.setStyle("-fx-font-size: 14;");
-
-        TextArea questionsField = new TextArea(String.join("\n", assessment.questions));
-        questionsField.setPromptText("Enter questions (one per line, for MCQ: Question|Opt1|Opt2|Opt3|Opt4|Correct)");
-        questionsField.setStyle("-fx-font-size: 14;");
-        questionsField.setPrefRowCount(5);
-
-        Button saveButton = new Button("Save");
-        saveButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        Button cancelButton = new Button("Cancel");
-        cancelButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        HBox buttonBox = new HBox(10, saveButton, cancelButton);
-        buttonBox.setAlignment(Pos.CENTER);
-
-        saveButton.setOnAction(e -> {
-            String newTitle = assessmentTitleField.getText().trim();
-            String weightText = weightField.getText().trim();
-            String questionsText = questionsField.getText().trim();
-
-            if (newTitle.isEmpty() || weightText.isEmpty() || questionsText.isEmpty()) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "All fields are required");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                return;
-            }
-
-            double weight;
-            try {
-                weight = Double.parseDouble(weightText);
-                if (weight < 0.0 || weight > 1.0) {
-                    Alert alert = new Alert(Alert.AlertType.ERROR, "Weight must be between 0.0 and 1.0");
-                    alert.setHeaderText(null);
-                    alert.showAndWait();
-                    return;
-                }
-            } catch (NumberFormatException ex) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Invalid weight format");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-                return;
-            }
-
-            List<String> questions = Arrays.asList(questionsText.split("\n"));
-            if (assessment.type.equals("Multiple Choice")) {
-                for (String q : questions) {
-                    if (q.split("\\|").length != 6) {
-                        Alert alert = new Alert(Alert.AlertType.ERROR, "MCQ format: Question|Opt1|Opt2|Opt3|Opt4|Correct");
-                        alert.setHeaderText(null);
-                        alert.showAndWait();
-                        return;
-                    }
-                }
-            }
-
-            assessment.title = newTitle;
-            assessment.weight = weight;
-            assessment.questions = questions;
-            notifications.add(new Notification(UUID.randomUUID().toString(), "Assessment '" + newTitle + "' updated for '" + assessment.courseCode + "' by " + loggedInUser));
-            Alert alert = new Alert(Alert.AlertType.INFORMATION, "Assessment updated successfully!");
-            alert.setHeaderText(null);
-            alert.showAndWait();
-            dialog.close();
-            refreshScenes();
-            primaryStage.setScene(lecturerDashboardScene);
-        });
-
-        cancelButton.setOnAction(e -> dialog.close());
-
-        form.getChildren().addAll(title, assessmentTitleField, weightField, questionsField, buttonBox);
-
-        Scene dialogScene = new Scene(form, 500, 500);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
-    }
-
-    private void showGradeAssessmentDialog(Assessment assessment) {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Grade Assessment: " + assessment.title);
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-
-        Label title = new Label("Grade Assessment: " + assessment.title);
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        VBox submissionBox = new VBox(10);
-        ScrollPane submissionScroll = new ScrollPane(submissionBox);
-        submissionScroll.setFitToWidth(true);
-        submissionScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-
-        Map<String, List<Submission>> courseSubmissions = submissions.getOrDefault(assessment.courseCode, new HashMap<>());
-        if (courseSubmissions.isEmpty()) {
-            Label noSubmissions = new Label("No submissions available.");
-            noSubmissions.setFont(Font.font("Arial", 14));
-            noSubmissions.setTextFill(Color.web("#666666"));
-            submissionBox.getChildren().add(noSubmissions);
-        } else {
-            for (Map.Entry<String, List<Submission>> entry : courseSubmissions.entrySet()) {
-                String student = entry.getKey();
-                List<Submission> studentSubmissions = entry.getValue();
-                for (Submission submission : studentSubmissions) {
-                    if (submission.assessmentId.equals(assessment.id)) {
-                        VBox submissionItem = new VBox(5);
-                        Label studentLabel = new Label("Student: " + student);
-                        studentLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-                        studentLabel.setTextFill(Color.web("#1a252f"));
-                        Label answersLabel = new Label("Answers: " + String.join("; ", submission.answers));
-                        answersLabel.setFont(Font.font("Arial", 12));
-                        answersLabel.setTextFill(Color.web("#666666"));
-                        answersLabel.setWrapText(true);
-                        TextField scoreField = new TextField(String.valueOf(submission.score));
-                        scoreField.setPromptText("Enter score (0-100)");
-                        scoreField.setStyle("-fx-font-size: 14;");
-                        Button saveScoreButton = new Button("Save Score");
-                        saveScoreButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 12; -fx-padding: 5 10;");
-                        saveScoreButton.setOnAction(e -> {
-                            try {
-                                double score = Double.parseDouble(scoreField.getText().trim());
-                                if (score < 0 || score > 100) {
-                                    Alert alert = new Alert(Alert.AlertType.ERROR, "Score must be between 0 and 100");
-                                    alert.setHeaderText(null);
-                                    alert.showAndWait();
-                                } else {
-                                    submission.score = score;
-                                    notifications.add(new Notification(UUID.randomUUID().toString(), "Assessment '" + assessment.title + "' graded for '" + student + "' by " + loggedInUser));
-                                    Alert alert = new Alert(Alert.AlertType.INFORMATION, "Score saved successfully!");
-                                    alert.setHeaderText(null);
-                                    alert.showAndWait();
-                                    refreshScenes();
-                                }
-                            } catch (NumberFormatException ex) {
-                                Alert alert = new Alert(Alert.AlertType.ERROR, "Invalid score format");
-                                alert.setHeaderText(null);
-                                alert.showAndWait();
-                            }
-                        });
-                        submissionItem.getChildren().addAll(studentLabel, answersLabel, scoreField, saveScoreButton);
-                        submissionBox.getChildren().add(submissionItem);
-                    }
-                }
-            }
-        }
-
-        Button closeButton = new Button("Close");
-        closeButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        closeButton.setOnAction(e -> dialog.close());
-
-        form.getChildren().addAll(title, submissionScroll, closeButton);
-
-        Scene dialogScene = new Scene(form, 600, 600);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
-    }
-
+    // --- Reports ---
     private void showClassPerformanceReport() {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Class Performance Report");
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Class Performance");
 
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
 
-        Label title = new Label("Class Performance Report");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
+        Label lbl = new Label("Class Performance");
+        lbl.setFont(Font.font("Arial", FontWeight.BOLD, 16));
 
-        ComboBox<String> courseCombo = new ComboBox<>();
-        if (loggedInUser != null && users.get(loggedInUser) != null && users.get(loggedInUser).faculty != null) {
-            courseCombo.getItems().addAll(allCourses.stream()
-                    .filter(c -> c.faculty != null && c.faculty.equals(users.get(loggedInUser).faculty))
-                    .map(c -> c.name + " (" + c.code + ")")
-                    .collect(Collectors.toList()));
-        }
-        courseCombo.setPromptText("Select Course");
-        courseCombo.setStyle("-fx-font-size: 14;");
+        ComboBox<String> cbCourse = new ComboBox<>();
+        for (Course c : getCoursesByFaculty(getCurrentUser().faculty))
+            cbCourse.getItems().add(c.name + " (" + c.code + ")");
+        cbCourse.setPromptText("Select Course");
 
-        VBox reportBox = new VBox(10);
-        ScrollPane reportScroll = new ScrollPane(reportBox);
-        reportScroll.setFitToWidth(true);
-        reportScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
+        VBox resultBox = new VBox(10);
 
-        courseCombo.setOnAction(e -> {
-            reportBox.getChildren().clear();
-            String courseSelection = courseCombo.getValue();
-            if (courseSelection != null) {
-                String courseCode = courseSelection.substring(courseSelection.lastIndexOf("(") + 1, courseSelection.length() - 1);
-                Map<String, List<Submission>> courseSubmissions = submissions.getOrDefault(courseCode, new HashMap<>());
-                if (courseSubmissions.isEmpty()) {
-                    Label noData = new Label("No submissions available for this course.");
-                    noData.setFont(Font.font("Arial", 14));
-                    noData.setTextFill(Color.web("#666666"));
-                    reportBox.getChildren().add(noData);
-                } else {
-                    for (Map.Entry<String, List<Submission>> entry : courseSubmissions.entrySet()) {
-                        String student = entry.getKey();
-                        List<Submission> studentSubmissions = entry.getValue();
-                        double averageScore = studentSubmissions.stream()
-                                .mapToDouble(s -> s.score)
-                                .average()
-                                .orElse(0.0);
-                        Label studentLabel = new Label("Student: " + student + " - Average Score: " + String.format("%.2f", averageScore));
-                        studentLabel.setFont(Font.font("Arial", 12));
-                        studentLabel.setTextFill(Color.web("#666666"));
-                        reportBox.getChildren().add(studentLabel);
+        cbCourse.setOnAction(e -> {
+            resultBox.getChildren().clear();
+            String sel = cbCourse.getValue();
+            if (sel != null) {
+                String code = sel.substring(sel.lastIndexOf("(") + 1, sel.length() - 1);
+                try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+                    String sql = "SELECT student_username, AVG(score) as avg_score FROM submissions WHERE assessment_id IN (SELECT id FROM assessments WHERE course_code=?) GROUP BY student_username";
+                    PreparedStatement ps = conn.prepareStatement(sql);
+                    ps.setString(1, code);
+                    ResultSet rs = ps.executeQuery();
+                    while (rs.next()) {
+                        Label studentScoreLabel = new Label(rs.getString("student_username") + ": " + String.format("%.2f", rs.getDouble("avg_score")));
+                        resultBox.getChildren().add(studentScoreLabel);
                     }
+                } catch (SQLException ex) {
+                    ex.printStackTrace();
                 }
             }
         });
 
-        Button closeButton = new Button("Close");
-        closeButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        closeButton.setOnAction(e -> dialog.close());
+        Button btnClose = new Button("Close");
+        btnClose.setOnAction(e -> dlg.close());
 
-        form.getChildren().addAll(title, courseCombo, reportScroll, closeButton);
-
-        Scene dialogScene = new Scene(form, 600, 600);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
-    }
-
-    private void showTranscriptReport() {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Student Transcripts");
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
-
-        Label title = new Label("Student Transcripts");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
-
-        TextField studentUsernameField = new TextField();
-        studentUsernameField.setPromptText("Enter Student Username");
-        studentUsernameField.setStyle("-fx-font-size: 14;");
-
-        VBox transcriptBox = new VBox(10);
-        ScrollPane transcriptScroll = new ScrollPane(transcriptBox);
-        transcriptScroll.setFitToWidth(true);
-        transcriptScroll.setStyle("-fx-background: #ffffff; -fx-border-color: #ffffff;");
-
-        studentUsernameField.textProperty().addListener((obs, old, newValue) -> {
-            transcriptBox.getChildren().clear();
-            String studentUsername = newValue.trim();
-            if (!studentUsername.isEmpty() && users.containsKey(studentUsername) && users.get(studentUsername).role.equals("Student")) {
-                List<String> studentCourses = enrolledCourses.getOrDefault(studentUsername, new ArrayList<>());
-                if (studentCourses.isEmpty()) {
-                    Label noData = new Label("No enrolled courses for this student.");
-                    noData.setFont(Font.font("Arial", 14));
-                    noData.setTextFill(Color.web("#666666"));
-                    transcriptBox.getChildren().add(noData);
-                } else {
-                    for (String courseCode : studentCourses) {
-                        Course course = allCourses.stream().filter(c -> c.code.equals(courseCode)).findFirst().orElse(null);
-                        if (course != null) {
-                            Label courseLabel = new Label(course.name + " (" + course.code + ")");
-                            courseLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-                            courseLabel.setTextFill(Color.web("#1a252f"));
-                            transcriptBox.getChildren().add(courseLabel);
-                            List<Submission> studentSubmissions = submissions.getOrDefault(courseCode, new HashMap<>())
-                                    .getOrDefault(studentUsername, new ArrayList<>());
-                            if (studentSubmissions.isEmpty()) {
-                                Label noSubmissions = new Label("No submissions.");
-                                noSubmissions.setFont(Font.font("Arial", 12));
-                                noSubmissions.setTextFill(Color.web("#666666"));
-                                transcriptBox.getChildren().add(noSubmissions);
-                            } else {
-                                for (Submission submission : studentSubmissions) {
-                                    Assessment assessment = assessments.getOrDefault(courseCode, new ArrayList<>())
-                                            .stream()
-                                            .filter(a -> a.id.equals(submission.assessmentId))
-                                            .findFirst()
-                                            .orElse(null);
-                                    if (assessment != null) {
-                                        Label submissionLabel = new Label(assessment.title + ": " + submission.score);
-                                        submissionLabel.setFont(Font.font("Arial", 12));
-                                        submissionLabel.setTextFill(Color.web("#666666"));
-                                        transcriptBox.getChildren().add(submissionLabel);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else if (!studentUsername.isEmpty()) {
-                Label invalid = new Label("Invalid student username.");
-                invalid.setFont(Font.font("Arial", 14));
-                invalid.setTextFill(Color.web("#666666"));
-                transcriptBox.getChildren().add(invalid);
-            }
-        });
-
-        Button closeButton = new Button("Close");
-        closeButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        closeButton.setOnAction(e -> dialog.close());
-
-        form.getChildren().addAll(title, studentUsernameField, transcriptScroll, closeButton);
-
-        Scene dialogScene = new Scene(form, 600, 600);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
+        box.getChildren().addAll(lbl, cbCourse, resultBox, btnClose);
+        dlg.setScene(new Scene(box, 600, 400));
+        dlg.showAndWait();
     }
 
     private void showCertificationDialog() {
-        final Stage dialog = new Stage();
-        dialog.initModality(Modality.APPLICATION_MODAL);
-        dialog.initOwner(primaryStage);
-        dialog.setTitle("Issue Certifications");
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Issue Certifications");
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        Label lbl = new Label("Issue Certification");
+        lbl.setFont(Font.font("Arial", FontWeight.BOLD, 16));
+        ComboBox<String> cbCourse = new ComboBox<>();
+        for (Course c : getCoursesByFaculty(getCurrentUser().faculty))
+            cbCourse.getItems().add(c.name + " (" + c.code + ")");
+        TextField tfStudent = new TextField(); tfStudent.setPromptText("Student Username");
+        Button btnIssue = new Button("Issue");
+        btnIssue.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnIssue.setOnAction(e -> {
+            String courseSel = cbCourse.getValue();
+            String studentUser = tfStudent.getText().trim();
+            if (courseSel == null || studentUser.isEmpty()) { showAlert("Fill all"); return; }
+            User student = getUserByUsername(studentUser);
+            if (student == null || !student.role.equals("Student")) { showAlert("Invalid student"); return; }
+            String courseCode = courseSel.substring(courseSel.lastIndexOf("(")+1, courseSel.length()-1);
+            List<String> enrolled = getEnrolledCourses(studentUser);
+            if (!enrolled.contains(courseCode)) { showAlert("Student not enrolled"); return; }
+            // For now, just alert
+            showAlert("Certificate issued to " + studentUser);
+            dlg.close();
+        });
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setOnAction(e -> dlg.close());
+        HBox hb = new HBox(10, btnIssue, btnCancel); hb.setAlignment(Pos.CENTER);
+        box.getChildren().addAll(lbl, cbCourse, tfStudent, hb);
+        dlg.setScene(new Scene(box, 350, 200));
+        dlg.showAndWait();
+    }
 
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(20));
-        form.setStyle("-fx-background-color: #f4f6f8;");
+    private void showEditAnnouncementDialog(Announcement a) {
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Edit Announcement");
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        TextArea taContent = new TextArea(a.content);
+        Button btnSave = new Button("Save");
+        btnSave.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnSave.setOnAction(e -> {
+            String newContent = taContent.getText().trim();
+            if (newContent.isEmpty()) { showAlert("Content cannot be empty"); return; }
+            try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+                PreparedStatement ps = conn.prepareStatement("UPDATE announcements SET content=? WHERE id=?");
+                ps.setString(1, newContent);
+                ps.setInt(2, Integer.parseInt(a.id));
+                ps.executeUpdate();
+            } catch (SQLException ex) { ex.printStackTrace(); }
+            showAlert("Updated");
+            dlg.close();
+        });
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setOnAction(e -> dlg.close());
+        HBox hb = new HBox(10, btnSave, btnCancel); hb.setAlignment(Pos.CENTER);
+        box.getChildren().addAll(new Label("Edit Announcement"), taContent, hb);
+        dlg.setScene(new Scene(box, 400, 300));
+        dlg.showAndWait();
+    }
 
-        Label title = new Label("Issue Certifications");
-        title.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-        title.setTextFill(Color.web("#1a252f"));
+    private void showPostAnnouncementDialog() {
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Post Announcement");
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        ComboBox<String> cbCourse = new ComboBox<>();
+        for (Course c : getCoursesByFaculty(getCurrentUser().faculty))
+            cbCourse.getItems().add(c.name + " (" + c.code + ")");
+        TextArea taContent = new TextArea(); taContent.setPromptText("Content");
+        Button btnPost = new Button("Post");
+        btnPost.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnPost.setOnAction(e -> {
+            String sel = cbCourse.getValue();
+            String content = taContent.getText().trim();
+            if (sel == null || content.isEmpty()) { showAlert("Fill all"); return; }
+            String courseCode = sel.substring(sel.lastIndexOf("(")+1, sel.length()-1);
+            try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+                PreparedStatement ps = conn.prepareStatement("INSERT INTO announcements (course_code, content, posted_by) VALUES (?, ?, ?)");
+                ps.setString(1, courseCode);
+                ps.setString(2, content);
+                ps.setString(3, getCurrentUser().username);
+                ps.executeUpdate();
+            } catch (SQLException ex) { ex.printStackTrace(); }
+            showAlert("Posted");
+            dlg.close();
+        });
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setOnAction(e -> dlg.close());
+        HBox hb = new HBox(10, btnPost, btnCancel); hb.setAlignment(Pos.CENTER);
+        box.getChildren().addAll(new Label("Post Announcement"), cbCourse, taContent, hb);
+        dlg.setScene(new Scene(box, 400, 300));
+        dlg.showAndWait();
+    }
 
-        ComboBox<String> courseCombo = new ComboBox<>();
-        if (loggedInUser != null && users.get(loggedInUser) != null && users.get(loggedInUser).faculty != null) {
-            courseCombo.getItems().addAll(allCourses.stream()
-                    .filter(c -> c.faculty != null && c.faculty.equals(users.get(loggedInUser).faculty))
-                    .map(c -> c.name + " (" + c.code + ")")
-                    .collect(Collectors.toList()));
-        }
-        courseCombo.setPromptText("Select Course");
-        courseCombo.setStyle("-fx-font-size: 14;");
+    private void showUploadContentDialog() {
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Upload Content");
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        ComboBox<String> cbCourse = new ComboBox<>();
+        for (Course c : getCoursesByFaculty(getCurrentUser().faculty))
+            cbCourse.getItems().add(c.name + " (" + c.code + ")");
+        TextField tfTitle = new TextField(); tfTitle.setPromptText("Content Title");
+        ComboBox<String> cbType = new ComboBox<>(); cbType.getItems().addAll("Video","PDF");
+        cbType.setPromptText("Content Type");
+        Button btnUpload = new Button("Upload");
+        btnUpload.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnUpload.setOnAction(e -> {
+            String sel = cbCourse.getValue();
+            String title = tfTitle.getText().trim();
+            String type = cbType.getValue();
+            if (sel == null || title.isEmpty() || type == null) { showAlert("Fill all"); return; }
+            String courseCode = sel.substring(sel.lastIndexOf("(")+1, sel.length()-1);
+            try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+                PreparedStatement ps = conn.prepareStatement("INSERT INTO contents (course_code, title, type, data) VALUES (?, ?, ?, ?)");
+                ps.setString(1, courseCode);
+                ps.setString(2, title);
+                ps.setString(3, type);
+                ps.setString(4, "Sample data");
+                ps.executeUpdate();
+            } catch (SQLException ex) { ex.printStackTrace(); }
+            showAlert("Content uploaded");
+            dlg.close();
+        });
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setOnAction(e -> dlg.close());
+        HBox hb = new HBox(10, btnUpload, btnCancel); hb.setAlignment(Pos.CENTER);
+        box.getChildren().addAll(new Label("Upload Content"), cbCourse, tfTitle, cbType, hb);
+        dlg.setScene(new Scene(box, 400, 300));
+        dlg.showAndWait();
+    }
 
-        TextField studentUsernameField = new TextField();
-        studentUsernameField.setPromptText("Enter Student Username");
-        studentUsernameField.setStyle("-fx-font-size: 14;");
+    private void showCreateAssessmentDialog() {
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Create Assessment");
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        ComboBox<String> cbCourse = new ComboBox<>();
+        for (Course c : getCoursesByFaculty(getCurrentUser().faculty))
+            cbCourse.getItems().add(c.name + " (" + c.code + ")");
+        TextField tfTitle = new TextField(); tfTitle.setPromptText("Assessment Title");
+        ComboBox<String> cbType = new ComboBox<>(); cbType.getItems().addAll("Multiple Choice","Short Answer");
+        cbType.setPromptText("Assessment Type");
+        TextField tfWeight = new TextField(); tfWeight.setPromptText("Weight (0-1)");
+        TextArea taQuestions = new TextArea(); taQuestions.setPromptText("Questions (one per line)\nFor MCQ: Question|Opt1|Opt2|Opt3|Opt4|Correct");
+        Button btnCreate = new Button("Create");
+        btnCreate.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnCreate.setOnAction(e -> {
+            if (cbCourse.getValue() == null || tfTitle.getText().trim().isEmpty() || cbType.getValue() == null || tfWeight.getText().trim().isEmpty() || taQuestions.getText().trim().isEmpty()) {
+                showAlert("Fill all");
+                return;
+            }
+            double weight;
+            try { weight=Double.parseDouble(tfWeight.getText()); }
+            catch (Exception ex) { showAlert("Invalid weight"); return; }
+            if (weight<0 || weight>1) { showAlert("Weight between 0 and 1"); return; }
+            String courseCode = cbCourse.getValue().substring(cbCourse.getValue().lastIndexOf("(")+1, cbCourse.getValue().length()-1);
+            List<String> questions = Arrays.asList(taQuestions.getText().split("\n"));
+            for (String q : questions) {
+                if (cbType.getValue().equals("Multiple Choice") && q.split("\\|").length != 6) {
+                    showAlert("MCQ format: Question|Opt1|Opt2|Opt3|Opt4|Correct");
+                    return;
+                }
+            }
+            try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+                PreparedStatement ps = conn.prepareStatement(
+                        "INSERT INTO assessments (course_code, title, type, weight, questions, posted_by) VALUES (?, ?, ?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
+                ps.setString(1, courseCode);
+                ps.setString(2, tfTitle.getText().trim());
+                ps.setString(3, cbType.getValue());
+                ps.setDouble(4, weight);
+                ps.setString(5, String.join("||", questions));
+                ps.setString(6, getCurrentUser().username);
+                ps.executeUpdate();
+                refreshScenes();
+                showAlert("Assessment created");
+                dlg.close();
+            } catch (SQLException ex) { ex.printStackTrace(); }
+        });
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setOnAction(e -> dlg.close());
+        HBox hb = new HBox(10, btnCreate, btnCancel); hb.setAlignment(Pos.CENTER);
+        box.getChildren().addAll(new Label("Create Assessment"), cbCourse, tfTitle, cbType, tfWeight, taQuestions, hb);
+        dlg.setScene(new Scene(box, 400, 400));
+        dlg.showAndWait();
+    }
 
-        Button issueButton = new Button("Issue Certificate");
-        issueButton.setStyle("-fx-background-color: #00c4b4; -fx-text-fill: white; -fx-font-size: 14; -fx-padding: 10 20;");
-        Button cancelButton = new Button("Cancel");
-        cancelButton.setStyle("-fx-background-color: #ffffff; -fx-text-fill: #00c4b4; -fx-font-size: 14; -fx-border-color: #00c4b4; -fx-border-width: 1;");
-        HBox buttonBox = new HBox(10, issueButton, cancelButton);
-        buttonBox.setAlignment(Pos.CENTER);
+    private void showEditAssessmentDialog(Assessment a) {
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Edit Assessment");
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        TextField tfTitle = new TextField(a.title);
+        TextField tfWeight = new TextField(String.valueOf(a.weight));
+        TextArea taQuestions = new TextArea(String.join("||", a.questions));
+        Button btnSave = new Button("Save");
+        btnSave.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnSave.setOnAction(e -> {
+            if (tfTitle.getText().trim().isEmpty() || tfWeight.getText().trim().isEmpty() || taQuestions.getText().trim().isEmpty()) {
+                showAlert("Fill all");
+                return;
+            }
+            double weight;
+            try { weight=Double.parseDouble(tfWeight.getText()); }
+            catch (Exception ex) { showAlert("Invalid weight"); return; }
+            if (weight<0 || weight>1) { showAlert("Weight between 0 and 1"); return; }
+            List<String> questions = Arrays.asList(taQuestions.getText().split("\\|\\|"));
+            try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+                PreparedStatement ps = conn.prepareStatement("UPDATE assessments SET title=?, weight=?, questions=? WHERE id=?");
+                ps.setString(1, tfTitle.getText().trim());
+                ps.setDouble(2, weight);
+                ps.setString(3, String.join("||", questions));
+                ps.setInt(4, Integer.parseInt(a.id));
+                ps.executeUpdate();
+                refreshScenes();
+                showAlert("Assessment updated");
+                dlg.close();
+            } catch (SQLException ex) { ex.printStackTrace(); }
+        });
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setOnAction(e -> dlg.close());
+        HBox hb = new HBox(10, btnSave, btnCancel); hb.setAlignment(Pos.CENTER);
+        box.getChildren().addAll(new Label("Edit Assessment"), tfTitle, tfWeight, taQuestions, hb);
+        dlg.setScene(new Scene(box, 400, 300));
+        dlg.showAndWait();
+    }
 
-        issueButton.setOnAction(e -> {
-            String courseSelection = courseCombo.getValue();
-            String studentUsername = studentUsernameField.getText().trim();
-            if (courseSelection == null || studentUsername.isEmpty()) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Please select a course and enter a student username");
-                alert.setHeaderText(null);
-                alert.showAndWait();
-            } else if (!users.containsKey(studentUsername) || !users.get(studentUsername).role.equals("Student")) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Invalid student username");
-                alert.setHeaderText(null);
-                alert.showAndWait();
+    private void deleteAssessment(Assessment a) {
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+            PreparedStatement ps = conn.prepareStatement("DELETE FROM assessments WHERE id=?");
+            ps.setInt(1, Integer.parseInt(a.id));
+            ps.executeUpdate();
+            PreparedStatement ps2 = conn.prepareStatement("DELETE FROM submissions WHERE assessment_id=?");
+            ps2.setInt(1, Integer.parseInt(a.id));
+            ps2.executeUpdate();
+        } catch (SQLException e) { e.printStackTrace(); }
+        refreshScenes();
+    }
+
+    // --- Submit Assessment ---
+    private void showAssessmentSubmission(Assessment a) {
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Submit " + a.title);
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        List<String> answers = new ArrayList<>();
+        VBox questionsBox = new VBox(10);
+        for (int i=0; i<a.questions.size(); i++) {
+            String q = a.questions.get(i);
+            String[] parts = q.split("\\|");
+            String questionText = parts[0];
+            Label lblQ = new Label((i+1)+". "+questionText);
+            lblQ.setWrapText(true);
+            if (a.type.equals("Multiple Choice")) {
+                ToggleGroup tg = new ToggleGroup();
+                VBox optBox = new VBox(5);
+                for (int j=1;j<=4;j++) {
+                    RadioButton rb = new RadioButton(parts[j]);
+                    rb.setToggleGroup(tg);
+                    optBox.getChildren().add(rb);
+                }
+                int idx = i;
+                tg.selectedToggleProperty().addListener((obs, oldVal, newVal) -> {
+                    if (answers.size() <= idx) answers.add(null);
+                    answers.set(idx, newVal == null ? null : ((RadioButton)newVal).getText());
+                });
+                questionsBox.getChildren().addAll(lblQ, optBox);
             } else {
-                String courseCode = courseSelection.substring(courseSelection.lastIndexOf("(") + 1, courseSelection.length() - 1);
-                if (!enrolledCourses.getOrDefault(studentUsername, new ArrayList<>()).contains(courseCode)) {
-                    Alert alert = new Alert(Alert.AlertType.ERROR, "Student is not enrolled in this course");
-                    alert.setHeaderText(null);
-                    alert.showAndWait();
-                } else {
-                    notifications.add(new Notification(UUID.randomUUID().toString(), "Certificate issued to '" + studentUsername + "' for '" + courseSelection + "' by " + loggedInUser));
-                    Alert alert = new Alert(Alert.AlertType.INFORMATION, "Certificate issued successfully!");
-                    alert.setHeaderText(null);
-                    alert.showAndWait();
-                    dialog.close();
+                TextArea ta = new TextArea();
+                ta.setPromptText("Your answer");
+                int idx = i;
+                ta.textProperty().addListener((obs, old, newVal) -> {
+                    if (answers.size() <= idx) answers.add(null);
+                    answers.set(idx, newVal.trim());
+                });
+                questionsBox.getChildren().addAll(lblQ, ta);
+            }
+        }
+        Button btnSubmit = new Button("Submit");
+        btnSubmit.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnSubmit.setOnAction(e -> {
+            if (answers.contains(null) || answers.size() != a.questions.size()) {
+                showAlert("Please answer all questions");
+                return;
+            }
+            try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+                PreparedStatement ps = conn.prepareStatement(
+                        "INSERT INTO submissions (assessment_id, student_username, answers, score) VALUES (?, ?, ?, ?)");
+                ps.setInt(1, Integer.parseInt(a.id));
+                ps.setString(2, loggedInUser);
+                ps.setString(3, String.join("||", answers));
+                ps.setDouble(4, 0.0);
+                ps.executeUpdate();
+            } catch (SQLException ex) { ex.printStackTrace(); }
+            showAlert("Submitted");
+            dlg.close();
+            refreshScenes();
+        });
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setOnAction(e -> dlg.close());
+        HBox hb = new HBox(10, btnSubmit, btnCancel);
+        hb.setAlignment(Pos.CENTER);
+        box.getChildren().addAll(new Label("Answer Questions"), questionsBox, hb);
+        dlg.setScene(new Scene(box, 500, 400));
+        dlg.showAndWait();
+    }
+
+    // --- Grade assessment ---
+    private void showGradeAssessmentDialog(Assessment a) {
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Grade " + a.title);
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        Label lbl = new Label("Submissions for " + a.title);
+        lbl.setFont(Font.font("Arial", FontWeight.BOLD, 16));
+        VBox subsBox = new VBox(10);
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+            String sql = "SELECT * FROM submissions WHERE assessment_id=?";
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ps.setInt(1, Integer.parseInt(a.id));
+            ResultSet rs = ps.executeQuery();
+            boolean hasSub = false;
+            while (rs.next()) {
+                hasSub = true;
+                String studentUser = rs.getString("student_username");
+                String ansStr = rs.getString("answers");
+                double score = rs.getDouble("score");
+                List<String> answers = Arrays.asList(ansStr.split("\\|\\|"));
+                VBox subBox = new VBox(5);
+                Label lblStudent = new Label("Student: " + studentUser);
+                lblStudent.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+                Label lblAnswers = new Label("Answers: " + String.join("; ", answers));
+                Label lblScore = new Label("Score: " + score);
+                TextField tfScore = new TextField(String.valueOf(score));
+                tfScore.setPromptText("Enter score");
+                Button btnSave = new Button("Save");
+                btnSave.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+                btnSave.setOnAction(ev -> {
+                    try {
+                        double sc = Double.parseDouble(tfScore.getText());
+                        if (sc < 0 || sc > 100) { showAlert("Score 0-100"); return; }
+                        try (Connection c2 = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+                            PreparedStatement ps2 = c2.prepareStatement("UPDATE submissions SET score=? WHERE id=?");
+                            ps2.setDouble(1, sc);
+                            ps2.setInt(2, rs.getInt("id"));
+                            ps2.executeUpdate();
+                        }
+                        showAlert("Score saved");
+                        refreshScenes();
+                    } catch (Exception ex) { showAlert("Invalid score"); }
+                });
+                subBox.getChildren().addAll(lblStudent, lblAnswers, lblScore, tfScore, btnSave);
+                subsBox.getChildren().add(subBox);
+            }
+            if (!hasSub) {
+                subsBox.getChildren().add(new Label("No submissions."));
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        Button btnClose = new Button("Close");
+        btnClose.setStyle("-fx-background-color:#fff; -fx-border-color:#00c4b4; -fx-text-fill:#00c4b4;");
+        btnClose.setOnAction(e -> dlg.close());
+        box.getChildren().addAll(lbl, new ScrollPane(subsBox), btnClose);
+        dlg.setScene(new Scene(box, 600, 600));
+        dlg.showAndWait();
+    }
+
+    private void showTranscriptReport() {
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Student Transcripts");
+
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+
+        Label lbl = new Label("Student Transcripts");
+        lbl.setFont(Font.font("Arial", FontWeight.BOLD, 16));
+
+        TextField tfStudent = new TextField();
+        tfStudent.setPromptText("Enter Student Username");
+
+        VBox resultBox = new VBox(10);
+
+        tfStudent.textProperty().addListener((obs, old, newVal) -> {
+            resultBox.getChildren().clear();
+            String username = newVal.trim();
+            if (username.isEmpty()) return;
+
+            User user = getUserByUsername(username);
+            if (user == null || !user.role.equals("Student")) {
+                resultBox.getChildren().add(new Label("Invalid student"));
+                return;
+            }
+
+            List<String> courses = getEnrolledCourses(username);
+            for (String ccode : courses) {
+                Label courseLabel = new Label(getCourseName(ccode));
+                courseLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+                resultBox.getChildren().add(courseLabel);
+                try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+                    String sql = "SELECT a.title, s.score FROM assessments a JOIN submissions s ON a.id=s.assessment_id WHERE s.student_username=? AND a.course_code=?";
+                    PreparedStatement ps = conn.prepareStatement(sql);
+                    ps.setString(1, username);
+                    ps.setString(2, ccode);
+                    ResultSet rs = ps.executeQuery();
+                    while (rs.next()) {
+                        Label assessmentLabel = new Label(rs.getString("title") + ": " + rs.getDouble("score"));
+                        assessmentLabel.setFont(Font.font("Arial", 12));
+                        resultBox.getChildren().add(assessmentLabel);
+                    }
+                } catch (SQLException ex) {
+                    ex.printStackTrace();
                 }
             }
         });
 
-        cancelButton.setOnAction(e -> dialog.close());
+        Button btnClose = new Button("Close");
+        btnClose.setOnAction(e -> dlg.close());
 
-        form.getChildren().addAll(title, courseCombo, studentUsernameField, buttonBox);
+        ScrollPane scrollPane = new ScrollPane(resultBox);
+        scrollPane.setFitToWidth(true);
 
-        Scene dialogScene = new Scene(form, 400, 300);
-        dialog.setScene(dialogScene);
-        dialog.showAndWait();
+        box.getChildren().addAll(lbl, tfStudent, scrollPane, btnClose);
+        dlg.setScene(new Scene(box, 600, 600));
+        dlg.showAndWait();
+    }
+
+    private String getCourseName(String courseCode) {
+        Course c = getCourseByCode(courseCode);
+        return c != null ? c.name : "Unknown Course";
+    }
+
+    private void showPostMessageDialog(String courseCode) {
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Post Message");
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        TextArea taMsg = new TextArea(); taMsg.setPromptText("Your message");
+        Button btnPost = new Button("Post");
+        btnPost.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnPost.setOnAction(e -> {
+            String msg = taMsg.getText().trim();
+            if (msg.isEmpty()) { showAlert("Message cannot be empty"); return; }
+            try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+                PreparedStatement ps = conn.prepareStatement("INSERT INTO messages (course_code, sender, content) VALUES (?, ?, ?)");
+                ps.setString(1, courseCode);
+                ps.setString(2, loggedInUser);
+                ps.setString(3, msg);
+                ps.executeUpdate();
+            } catch (SQLException ex) { ex.printStackTrace(); }
+            showAlert("Message posted");
+            dlg.close();
+        });
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setOnAction(e -> dlg.close());
+        HBox hb = new HBox(10, btnPost, btnCancel); hb.setAlignment(Pos.CENTER);
+        box.getChildren().addAll(new Label("Post Message"), taMsg, hb);
+        dlg.setScene(new Scene(box, 400, 300));
+        dlg.showAndWait();
+    }
+
+    private void showCreateCourseDialog() {
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Create Course");
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        TextField tfName = new TextField(); tfName.setPromptText("Course Name");
+        TextField tfCode = new TextField(); tfCode.setPromptText("Course Code");
+        Button btnCreate = new Button("Create");
+        btnCreate.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnCreate.setOnAction(e -> {
+            String name = tfName.getText().trim();
+            String code = tfCode.getText().trim().toUpperCase();
+            String faculty = getCurrentUser().faculty;
+            if (name.isEmpty() || code.isEmpty()) { showAlert("Fill all"); return; }
+            if (getCourseByCode(code) != null) { showAlert("Code exists"); return; }
+            try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+                PreparedStatement ps = conn.prepareStatement("INSERT INTO courses (code, name, faculty) VALUES (?, ?, ?)");
+                ps.setString(1, code); ps.setString(2, name); ps.setString(3, faculty);
+                ps.executeUpdate();
+            } catch (SQLException ex) { ex.printStackTrace(); }
+            refreshScenes(); dlg.close();
+        });
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setOnAction(e -> dlg.close());
+        HBox hb = new HBox(10, btnCreate, btnCancel); hb.setAlignment(Pos.CENTER);
+        box.getChildren().addAll(new Label("Create Course"), tfName, tfCode, hb);
+        dlg.setScene(new Scene(box, 300, 200));
+        dlg.showAndWait();
+    }
+
+    private void showEditCourseDialog(Course c) {
+        Stage dlg = new Stage();
+        dlg.initOwner(primaryStage);
+        dlg.initModality(Modality.APPLICATION_MODAL);
+        dlg.setTitle("Edit Course");
+        VBox box = new VBox(10);
+        box.setPadding(new Insets(20));
+        TextField tfName = new TextField(c.name);
+        TextField tfCode = new TextField(c.code);
+        Button btnSave = new Button("Save");
+        btnSave.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnSave.setOnAction(e -> {
+            String newName = tfName.getText().trim();
+            String newCode = tfCode.getText().trim().toUpperCase();
+            if (newName.isEmpty() || newCode.isEmpty()) { showAlert("Fill all"); return; }
+            if (!newCode.equals(c.code) && getCourseByCode(newCode) != null) { showAlert("Code exists"); return; }
+            String oldCode = c.code;
+            c.name = newName; c.code = newCode;
+            updateCourseCodeInCollections(oldCode, newCode);
+            try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS)) {
+                PreparedStatement ps = conn.prepareStatement("UPDATE courses SET name=?, code=? WHERE code=?");
+                ps.setString(1, newName); ps.setString(2, newCode); ps.setString(3, oldCode);
+                ps.executeUpdate();
+            } catch (SQLException ex) { ex.printStackTrace(); }
+            refreshScenes(); dlg.close();
+        });
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setOnAction(e -> dlg.close());
+        HBox hb = new HBox(10, btnSave, btnCancel); hb.setAlignment(Pos.CENTER);
+        box.getChildren().addAll(new Label("Edit Course"), tfName, tfCode, hb);
+        dlg.setScene(new Scene(box, 300, 200));
+        dlg.showAndWait();
+    }
+
+    // --- Assessment CRUD ---
+    private List<Assessment> getAssessmentsForCourse(String courseCode) {
+        List<Assessment> list = new ArrayList<>();
+        String sql = "SELECT * FROM assessments WHERE course_code=?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, courseCode);
+            try (ResultSet rs=ps.executeQuery()) {
+                while(rs.next()) {
+                    String qStr = rs.getString("questions");
+                    List<String> questions = Arrays.asList(qStr.split("\\|\\|"));
+                    list.add(new Assessment(rs.getString("id"), rs.getString("course_code"), rs.getString("title"), rs.getString("type"), rs.getDouble("weight"), questions, rs.getString("posted_by")));
+                }
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return list;
+    }
+
+    private VBox createSidebar(String title, boolean isHome) {
+        VBox sidebar = new VBox(10);
+        sidebar.setPadding(new Insets(10));
+        sidebar.setStyle("-fx-background-color:#f0f0f0;");
+
+        Label lblTitle = new Label(title);
+        lblTitle.setFont(Font.font("Arial", FontWeight.BOLD, 16));
+        lblTitle.setTextFill(Color.web("#1a252f"));
+
+        Button btnHome = new Button("Home");
+        btnHome.setMaxWidth(Double.MAX_VALUE);
+        btnHome.setOnAction(e -> primaryStage.setScene(homeScene));
+
+        Button btnCourses = new Button("Courses");
+        btnCourses.setMaxWidth(Double.MAX_VALUE);
+        btnCourses.setOnAction(e -> primaryStage.setScene(createCourseRoot()));
+
+        Button btnDashboard = new Button("Dashboard");
+        btnDashboard.setMaxWidth(Double.MAX_VALUE);
+        btnDashboard.setOnAction(e -> {
+            if (loggedInUser != null) {
+                if (getCurrentUser().role.equals("Lecturer"))
+                    primaryStage.setScene(lecturerDashboardScene);
+                else
+                    primaryStage.setScene(dashboardScene);
+            } else {
+                showAlert("Sign in first");
+            }
+        });
+
+        Button btnProfile = new Button("Profile");
+        btnProfile.setMaxWidth(Double.MAX_VALUE);
+        btnProfile.setOnAction(e -> {
+            if (loggedInUser != null) primaryStage.setScene(profileScene);
+            else showAlert("Sign in first");
+        });
+
+        sidebar.getChildren().addAll(lblTitle, btnHome, btnCourses, btnDashboard, btnProfile);
+        return sidebar;
+    }
+
+    // --- Utility ---
+    private List<Course> getCoursesByFaculty(String faculty) {
+        return getAllCourses().stream().filter(c -> c.faculty.equals(faculty)).collect(Collectors.toList());
+    }
+
+    private void refreshScenes() {
+        homeScene = new Scene(createHomeRoot(), 1000, 700);
+        courseScene = new Scene(createCourseRoot().getRoot(), 1000, 700);
+        dashboardScene = new Scene(createDashboardRoot(), 1000, 700);
+        profileScene = new Scene(createProfileRoot(), 1000, 700);
+        lecturerDashboardScene = new Scene(createLecturerDashboardRoot(), 1000, 700);
+    }
+
+    private VBox createSummaryCard(String title, String value) {
+        VBox v = new VBox(10);
+        v.setStyle("-fx-background-color:#fff; -fx-border-color:#e0e0e0; -fx-padding:10;");
+        Label lblTitle = new Label(title);
+        lblTitle.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+        Label lblVal = new Label(value);
+        lblVal.setFont(Font.font("Arial", FontWeight.BOLD, 24));
+        lblVal.setTextFill(Color.web("#00c4b4"));
+        v.getChildren().addAll(lblTitle, lblVal);
+        return v;
+    }
+
+    private VBox createCourseCard(String name, String code) {
+        VBox v = new VBox(10);
+        v.setPadding(new Insets(10));
+        v.setStyle("-fx-background-color:#fff; -fx-border-color:#e0e0e0; -fx-effect:dropshadow(gaussian, rgba(0,0,0,0.1), 10, 0, 0, 2);");
+        Label lbl = new Label(name + "\n(" + code + ")");
+        lbl.setWrapText(true);
+        Button btnEnroll = new Button("Enroll");
+        btnEnroll.setStyle("-fx-background-color:#00c4b4; -fx-text-fill:#fff;");
+        btnEnroll.setOnAction(e -> {
+            if (loggedInUser == null) { showAlert("Sign in first"); return; }
+            if (getUserByUsername(loggedInUser).role.equals("Lecturer")) { showAlert("Lecturers can't enroll"); return; }
+            enrollCourse(loggedInUser, code);
+            refreshScenes();
+        });
+        v.getChildren().addAll(lbl, btnEnroll);
+        return v;
     }
 
     public static void main(String[] args) {
